@@ -1,0 +1,187 @@
+/**
+ * "달력" 탭 - 한 달치 달력 그리드에 그날 빠지는 사람 이름을 적어 두는 곳.
+ *
+ * 화면에 보이는 건 한 달이지만, 적어 넣은 내용은 숨김 시트에 계속 쌓여서
+ * 달을 바꿔도 지워지지 않습니다.
+ *
+ * 이름 칸 적는 법:  홍길동, 김집사(방송)
+ *   - 그냥 이름만 쓰면 그날 전부(설교/방송/수요현관)에서 빠집니다.
+ *   - 괄호로 역할을 적으면 그 역할에서만 빠집니다. (설교 / 방송 / 수요현관)
+ */
+
+var CE_CAL = {
+  YM_ROW: 1,
+  YM_COL: 2,
+  HEAD_ROW: 3,
+  FIRST_WEEK_ROW: 4,
+  COLS: 7
+};
+
+/** 일요일 시작 7칸짜리 보통 달력. */
+function ceCalendarWeeks(year, month) {
+  var first = ceMakeDate(year, month, 1);
+  var last = ceMakeDate(year, month + 1, 0);
+  var start = first;
+  while (start.getUTCDay() !== 0) start = ceAddDays(start, -1);
+  var end = last;
+  while (end.getUTCDay() !== 6) end = ceAddDays(end, 1);
+
+  var weeks = [];
+  var cursor = start;
+  while (ceIso(cursor) <= ceIso(end)) {
+    var week = [];
+    for (var i = 0; i < CE_CAL.COLS; i++) {
+      var d = ceAddDays(cursor, i);
+      week.push({
+        iso: ceIso(d),
+        day: d.getUTCDate(),
+        inMonth: d.getUTCMonth() === month - 1 && d.getUTCFullYear() === year
+      });
+    }
+    weeks.push(week);
+    cursor = ceAddDays(cursor, 7);
+  }
+  return weeks;
+}
+
+/** 'YYYY-MM' 또는 '2026년 9월' 을 {year, month} 로. */
+function ceParseYearMonth(v) {
+  if (Object.prototype.toString.call(v) === '[object Date]') {
+    return { year: v.getFullYear(), month: v.getMonth() + 1 };
+  }
+  var s = String(v == null ? '' : v).trim();
+  var m = s.match(/^(\d{4})\D+(\d{1,2})/);
+  if (!m) return null;
+  var month = Number(m[2]);
+  if (month < 1 || month > 12) return null;
+  return { year: Number(m[1]), month: month };
+}
+
+function ceFormatYearMonth(year, month) {
+  return year + '-' + (month < 10 ? '0' + month : month);
+}
+
+/** 이름 칸 한 줄을 [{name, role}] 로 풉니다. */
+function ceParseNameCell(text) {
+  var s = String(text == null ? '' : text).trim();
+  if (!s) return [];
+  var tokens = s.split(/[,\n;\/]+/);
+  var out = [];
+  for (var i = 0; i < tokens.length; i++) {
+    var t = tokens[i].trim();
+    if (!t) continue;
+    var role = CE_ROLE.ALL;
+    var m = t.match(/^(.*?)[(（]\s*([^)）]*)\s*[)）]\s*$/);
+    if (m) {
+      t = m[1].trim();
+      role = ceNormalizeRole(m[2]);
+    }
+    if (t) out.push({ name: t, role: role });
+  }
+  return out;
+}
+
+function ceFormatNameCell(entries) {
+  return entries.map(function (e) {
+    return e.role === CE_ROLE.ALL ? e.name : e.name + '(' + ceRoleLabel(e.role) + ')';
+  }).join(', ');
+}
+
+/**
+ * 지금 화면에 떠 있는 달력의 내용을 숨김 시트에 저장합니다.
+ * 다른 달의 기록은 건드리지 않습니다.
+ */
+function ceSaveCalendar() {
+  var sh = ceSheet(CE_TAB.CALENDAR, false);
+  if (!sh) return 0;
+  var ym = ceParseYearMonth(sh.getRange(CE_CAL.YM_ROW, CE_CAL.YM_COL).getValue());
+  if (!ym) return 0;
+
+  var weeks = ceCalendarWeeks(ym.year, ym.month);
+  var visible = {};
+  var fresh = [];
+
+  for (var w = 0; w < weeks.length; w++) {
+    var nameRow = CE_CAL.FIRST_WEEK_ROW + w * 2 + 1;
+    var row = sh.getRange(nameRow, 1, 1, CE_CAL.COLS).getValues()[0];
+    for (var c = 0; c < CE_CAL.COLS; c++) {
+      var cell = weeks[w][c];
+      if (!cell.inMonth) continue;
+      visible[cell.iso] = true;
+      var entries = ceParseNameCell(row[c]);
+      for (var i = 0; i < entries.length; i++) {
+        fresh.push({ name: entries[i].name, start: cell.iso, end: cell.iso, role: entries[i].role });
+      }
+    }
+  }
+
+  // 이 달에 해당하는 기존 기록은 방금 읽은 것으로 통째로 갈아 끼웁니다.
+  var kept = ceReadStoredExceptions().filter(function (e) { return !visible[e.start]; });
+  ceWriteStoredExceptions(kept.concat(fresh));
+  return fresh.length;
+}
+
+/**
+ * 달력을 해당 연월로 다시 그립니다. 그리기 전에 지금 내용을 먼저 저장합니다.
+ */
+function ceRenderCalendar(year, month) {
+  ceSaveCalendar();
+
+  var sh = ceSheet(CE_TAB.CALENDAR, true);
+  var stored = ceReadStoredExceptions();
+  var byIso = {};
+  for (var i = 0; i < stored.length; i++) {
+    if (!byIso[stored[i].start]) byIso[stored[i].start] = [];
+    byIso[stored[i].start].push({ name: stored[i].name, role: stored[i].role });
+  }
+
+  var weeks = ceCalendarWeeks(year, month);
+  sh.clear();
+  sh.clearNotes();
+
+  sh.getRange(CE_CAL.YM_ROW, 1).setValue('연월').setFontWeight('bold');
+  sh.getRange(CE_CAL.YM_ROW, CE_CAL.YM_COL).setValue(ceFormatYearMonth(year, month))
+    .setNumberFormat('@').setFontWeight('bold').setBackground('#fff2cc');
+  sh.getRange(CE_CAL.YM_ROW, 3, 1, 5).merge()
+    .setValue('연월을 바꾼 뒤 메뉴에서 [달력 다시 그리기] 를 누르세요. 적은 내용은 저장됩니다.')
+    .setFontColor('#666666');
+
+  sh.getRange(2, 1, 1, CE_CAL.COLS).merge()
+    .setValue('날짜 아래 칸에 그날 빠지는 사람 이름을 적으세요.  예)  홍길동,  김집사(방송)   — 역할을 안 적으면 그날 전부 제외')
+    .setFontColor('#666666').setWrap(true);
+
+  var headers = [['일', '월', '화', '수', '목', '금', '토']];
+  sh.getRange(CE_CAL.HEAD_ROW, 1, 1, CE_CAL.COLS).setValues(headers)
+    .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff')
+    .setFontWeight('bold').setHorizontalAlignment('center');
+
+  for (var w = 0; w < weeks.length; w++) {
+    var dateRow = CE_CAL.FIRST_WEEK_ROW + w * 2;
+    var nameRow = dateRow + 1;
+    var dates = [];
+    var names = [];
+    var colors = [];
+    for (var c = 0; c < CE_CAL.COLS; c++) {
+      var cell = weeks[w][c];
+      dates.push(cell.inMonth ? cell.day : '');
+      names.push(cell.inMonth ? ceFormatNameCell(byIso[cell.iso] || []) : '');
+      colors.push(cell.inMonth ? null : CE_COLOR.BAND_BG);
+    }
+    sh.getRange(dateRow, 1, 1, CE_CAL.COLS).setValues([dates])
+      .setFontWeight('bold').setHorizontalAlignment('left').setBackground('#f3f3f3');
+    sh.getRange(nameRow, 1, 1, CE_CAL.COLS).setValues([names]).setWrap(true);
+    for (var k = 0; k < CE_CAL.COLS; k++) {
+      if (colors[k]) {
+        sh.getRange(dateRow, k + 1, 2, 1).setBackground(colors[k]);
+      }
+    }
+    sh.setRowHeight(nameRow, 44);
+  }
+
+  var lastRow = CE_CAL.FIRST_WEEK_ROW + weeks.length * 2 - 1;
+  sh.getRange(CE_CAL.HEAD_ROW, 1, lastRow - CE_CAL.HEAD_ROW + 1, CE_CAL.COLS)
+    .setBorder(true, true, true, true, true, true, CE_COLOR.BORDER, SpreadsheetApp.BorderStyle.SOLID);
+  for (var col = 1; col <= CE_CAL.COLS; col++) sh.setColumnWidth(col, 120);
+  sh.setFrozenRows(CE_CAL.HEAD_ROW);
+  return sh;
+}
