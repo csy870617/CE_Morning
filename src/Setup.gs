@@ -7,7 +7,6 @@ function ceSetupAll() {
   var created = [];
   if (ceSetupSettings()) created.push(CE_TAB.SETTINGS);
   if (ceSetupRotation()) created.push(CE_TAB.ROTATION);
-  if (ceSetupLeave()) created.push(CE_TAB.LEAVE);
 
   if (!ceSheet(CE_TAB.CALENDAR, false)) {
     var today = new Date();
@@ -52,37 +51,16 @@ function ceSetupRotation() {
   sh.getRange(1, 1, 1, 3).setValues([['설교', '방송', '수요현관']])
     .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff').setFontWeight('bold')
     .setHorizontalAlignment('center');
-  sh.getRange(2, 1, 1, 3).setValues([['여기부터 이름을', '한 줄에 한 명씩', '순서대로 적으세요']])
-    .setFontColor('#999999').setFontStyle('italic');
-  sh.getRange(6, 1, 1, 3).merge()
-    .setValue('위에서 아래 순서대로 돌아갑니다. 중간에 이름을 끼워 넣거나 빼면 그 뒤 순서가 밀립니다.')
+  // 안내 문구는 A~C열 바깥(E열)에 둡니다. A~C열에 있으면 명단으로 읽혀 버립니다.
+  sh.getRange(1, 5).setValue('2행부터 한 줄에 한 명씩, 설 순서대로 적으세요.')
+    .setFontColor('#666666').setFontWeight('bold');
+  sh.getRange(2, 5).setValue('위에서 아래로 돌아갑니다. 중간에 이름을 끼워 넣거나 빼면 그 뒤 순서가 밀립니다.')
     .setFontColor('#666666');
+  sh.getRange(3, 5).setValue('세 명단의 인원 수는 서로 달라도 됩니다. 빈 칸은 알아서 건너뜁니다.')
+    .setFontColor('#666666');
+  sh.getRange(1, 1, 1, 3).setNote('이 열에는 이름만 적어 주세요. 메모나 안내 문구를 적으면 사람 이름으로 읽힙니다.');
   for (var c = 1; c <= 3; c++) sh.setColumnWidth(c, 140);
-  sh.setFrozenRows(1);
-  return true;
-}
-
-function ceSetupLeave() {
-  if (ceSheet(CE_TAB.LEAVE, false)) return false;
-  var sh = ceSheet(CE_TAB.LEAVE, true);
-  sh.getRange(1, 1, 1, 5).setValues([['이름', '시작일', '종료일', '역할', '사유']])
-    .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff').setFontWeight('bold');
-  sh.getRange(2, 1, 1, 5).setValues([['(예) 홍길동', '2026-09-07', '2026-09-12', '전체', '휴가']])
-    .setFontColor('#999999').setFontStyle('italic');
-  sh.getRange(2, 2, 200, 2).setNumberFormat('@');
-
-  var roleRule = SpreadsheetApp.newDataValidation()
-    .requireValueInList(['전체', '설교', '방송', '수요현관'], true)
-    .setAllowInvalid(true).build();
-  sh.getRange(2, 4, 200, 1).setDataValidation(roleRule);
-
-  sh.getRange(1, 6).setValue('며칠 이상 이어지는 휴가는 여기에 한 줄로 적으면 됩니다. 하루짜리는 [달력] 탭이 더 편합니다.')
-    .setFontColor('#666666');
-  sh.setColumnWidth(1, 110);
-  sh.setColumnWidth(2, 110);
-  sh.setColumnWidth(3, 110);
-  sh.setColumnWidth(4, 90);
-  sh.setColumnWidth(5, 160);
+  sh.setColumnWidth(5, 420);
   sh.setFrozenRows(1);
   return true;
 }

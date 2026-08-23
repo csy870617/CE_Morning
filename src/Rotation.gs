@@ -16,6 +16,12 @@ var CE_ROLE = {
   DOOR: 'DOOR'
 };
 
+/**
+ * 달력에 이 말을 적으면 그날은 배정에서 통째로 빠집니다.
+ * 시트 칸은 비워 두어 손으로 직접 적으실 수 있게 합니다.
+ */
+var CE_HOLIDAY_NAMES = ['휴일', '휴무', '없음', '직접입력'];
+
 var CE_ROLE_LABELS = {
   '전체': CE_ROLE.ALL,
   '모두': CE_ROLE.ALL,
@@ -84,6 +90,25 @@ function ceNormalizeRole(v) {
 /* ------------------------------------------------------------------ */
 /* 예외(휴가) 판정                                                     */
 /* ------------------------------------------------------------------ */
+
+function ceIsHolidayName(name) {
+  return CE_HOLIDAY_NAMES.indexOf(String(name == null ? '' : name).trim()) >= 0;
+}
+
+/**
+ * 그날 그 역할이 '휴일' 로 잡혀 있는지.
+ * 휴일인 날은 아무도 배정하지 않고, 로테이션 순번도 그대로 둡니다.
+ */
+function ceIsHoliday(iso, role, exceptions) {
+  for (var i = 0; i < exceptions.length; i++) {
+    var ex = exceptions[i];
+    if (!ceIsHolidayName(ex.name)) continue;
+    if (ex.role !== CE_ROLE.ALL && ex.role !== role) continue;
+    var end = ex.end || ex.start;
+    if (iso >= ex.start && iso <= end) return true;
+  }
+  return false;
+}
 
 /**
  * exceptions: [{ name, start:'YYYY-MM-DD', end:'YYYY-MM-DD', role }]
@@ -191,17 +216,35 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     var dow = d.getUTCDay();
 
     if (dawnDows.indexOf(dow) >= 0) {
-      var s = cePickNext(rotations.sermon, sermonPtr, iso, CE_ROLE.SERMON, ex);
-      sermonPtr = s.ptr;
-      var b = cePickNext(rotations.broadcast, broadcastPtr, iso, CE_ROLE.BROADCAST, ex);
-      broadcastPtr = b.ptr;
-      dawnDays.push({ iso: iso, dow: dow, preacher: s.name, broadcast: b.name });
+      var offSermon = ceIsHoliday(iso, CE_ROLE.SERMON, ex);
+      var offBroadcast = ceIsHoliday(iso, CE_ROLE.BROADCAST, ex);
+      var preacher = '';
+      var broadcast = '';
+      if (!offSermon) {
+        var s = cePickNext(rotations.sermon, sermonPtr, iso, CE_ROLE.SERMON, ex);
+        sermonPtr = s.ptr;
+        preacher = s.name;
+      }
+      if (!offBroadcast) {
+        var b = cePickNext(rotations.broadcast, broadcastPtr, iso, CE_ROLE.BROADCAST, ex);
+        broadcastPtr = b.ptr;
+        broadcast = b.name;
+      }
+      dawnDays.push({
+        iso: iso, dow: dow, preacher: preacher, broadcast: broadcast,
+        offSermon: offSermon, offBroadcast: offBroadcast
+      });
     }
 
     if (doorDows.indexOf(dow) >= 0) {
-      var w = cePickNext(rotations.door, doorPtr, iso, CE_ROLE.DOOR, ex);
-      doorPtr = w.ptr;
-      doorDays.push({ iso: iso, dow: dow, door: w.name });
+      var offDoor = ceIsHoliday(iso, CE_ROLE.DOOR, ex);
+      var doorName = '';
+      if (!offDoor) {
+        var w = cePickNext(rotations.door, doorPtr, iso, CE_ROLE.DOOR, ex);
+        doorPtr = w.ptr;
+        doorName = w.name;
+      }
+      doorDays.push({ iso: iso, dow: dow, door: doorName, offDoor: offDoor });
     }
   }
 
@@ -216,6 +259,9 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
       preacher: day.preacher,
       broadcast: day.broadcast,
       door: '',
+      offSermon: !!day.offSermon,
+      offBroadcast: !!day.offBroadcast,
+      offDoor: false,
       swapNote: day.swapNote || '',
       warning: day.warning || ''
     };
@@ -223,9 +269,14 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
   for (i = 0; i < doorDays.length; i++) {
     var wd = doorDays[i];
     if (!byIso[wd.iso]) {
-      byIso[wd.iso] = { iso: wd.iso, preacher: '', broadcast: '', door: '', swapNote: '', warning: '' };
+      byIso[wd.iso] = {
+        iso: wd.iso, preacher: '', broadcast: '', door: '',
+        offSermon: false, offBroadcast: false, offDoor: false,
+        swapNote: '', warning: ''
+      };
     }
     byIso[wd.iso].door = wd.door;
+    byIso[wd.iso].offDoor = !!wd.offDoor;
   }
 
   return { byIso: byIso, dawnDays: dawnDays, doorDays: doorDays };
@@ -276,6 +327,9 @@ if (typeof module !== 'undefined') {
     ceAddDays: ceAddDays,
     ceParseDowList: ceParseDowList,
     ceNormalizeRole: ceNormalizeRole,
+    CE_HOLIDAY_NAMES: CE_HOLIDAY_NAMES,
+    ceIsHolidayName: ceIsHolidayName,
+    ceIsHoliday: ceIsHoliday,
     ceIsAvailable: ceIsAvailable,
     cePickNext: cePickNext,
     ceResolveConflicts: ceResolveConflicts,

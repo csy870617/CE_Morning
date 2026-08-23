@@ -51,10 +51,17 @@ function ceCollectWarnings(grid, sched) {
       var a = sched.byIso[cell.iso];
       if (!a) continue;
       if (a.warning) out.push(cell.iso + ' : ' + a.warning);
-      if (!a.preacher && cell.iso >= grid.startIso) out.push(cell.iso + ' : 설교자를 채우지 못했습니다 (전원 예외)');
+      if (!a.preacher && !a.offSermon && cell.iso >= grid.startIso) {
+        out.push(cell.iso + ' : 설교자를 채우지 못했습니다 (전원 예외)');
+      }
     }
   }
   return out;
+}
+
+/** 휴일 칸: 비운 채로 표시만 해 둡니다. 그대로 손으로 적으시면 됩니다. */
+function ceMarkHoliday(sh, row, col) {
+  sh.getRange(row, col).setBackground(CE_COLOR.HOLIDAY_BG).setNote('휴일 — 직접 입력하세요');
 }
 
 function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
@@ -87,7 +94,11 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
 
     for (var c = 0; c < CE_OUT.COLS; c++) {
       var cell = week[c];
-      var a = sched.byIso[cell.iso] || { preacher: '', broadcast: '', door: '', swapNote: '', warning: '' };
+      var a = sched.byIso[cell.iso] || {
+        preacher: '', broadcast: '', door: '',
+        offSermon: false, offBroadcast: false, offDoor: false,
+        swapNote: '', warning: ''
+      };
       dates.push(cell.day);
       preachers.push(a.preacher || '');
       broadcasts.push(a.broadcast || '');
@@ -116,13 +127,22 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
       }
       var info = sched.byIso[cellInfo.iso];
       if (!info) continue;
+
+      // 휴일로 잡은 칸은 비운 채로 노랗게 두어 손으로 적으실 수 있게 합니다.
+      if (info.offSermon) ceMarkHoliday(sh, base + 1, col);
+      if (info.offBroadcast) ceMarkHoliday(sh, base + 2, col);
+      if (info.offDoor && k === CE_OUT.WED_OFFSET) ceMarkHoliday(sh, base + 3, col);
+      if (info.offSermon && info.offBroadcast) {
+        sh.getRange(base, col).setNote('휴일');
+      }
+
       if (info.swapNote) {
         sh.getRange(base + 2, col).setNote('설교자와 겹쳐서 ' + info.swapNote);
       }
       if (info.warning) {
         sh.getRange(base + 2, col).setBackground(CE_COLOR.WARN_BG).setNote(info.warning);
       }
-      if (!info.preacher) {
+      if (!info.preacher && !info.offSermon) {
         sh.getRange(base + 1, col).setBackground(CE_COLOR.WARN_BG).setNote('배정할 사람이 없습니다 (전원 예외)');
       }
     }

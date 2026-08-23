@@ -67,6 +67,17 @@ test('기간 휴가는 그 기간 내내 제외된다', () => {
     .forEach(iso => assert.strictEqual(s.byIso[iso].preacher, '가', iso));
 });
 
+test('달력에 하루씩 찍은 여러 날도 기간 휴가와 똑같이 동작한다', () => {
+  // 달력 탭은 하루짜리 기록만 쌓으므로, 실제로는 이 모양으로 들어옵니다.
+  const rot = { sermon: ['가', '나'], broadcast: ['ㄱ'], door: ['A'] };
+  const perDay = ['2026-08-31', '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05']
+    .map(iso => ({ name: '나', start: iso, end: iso, role: R.CE_ROLE.ALL }));
+  const asRange = [{ name: '나', start: '2026-08-31', end: '2026-09-05', role: R.CE_ROLE.ALL }];
+  const a = R.ceBuildSchedule(CFG, rot, perDay, '2026-09-05');
+  const b = R.ceBuildSchedule(CFG, rot, asRange, '2026-09-05');
+  assert.deepStrictEqual(a.byIso, b.byIso);
+});
+
 test('역할을 지정한 예외는 그 역할에만 적용된다', () => {
   const ex = [{ name: '가', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.BROADCAST }];
   assert.strictEqual(R.ceIsAvailable('가', '2026-09-01', R.CE_ROLE.BROADCAST, ex), false);
@@ -139,6 +150,95 @@ test('앞뒤 달 시트에서 겹치는 날짜의 배정이 서로 같다', () =
     assert.strictEqual(sep.byIso[iso].preacher, oct.byIso[iso].preacher, iso);
     assert.strictEqual(sep.byIso[iso].broadcast, oct.byIso[iso].broadcast, iso);
   });
+});
+
+test('휴일로 잡은 날은 아무도 배정되지 않는다', () => {
+  const rot = { sermon: ['가', '나', '다'], broadcast: ['ㄱ', 'ㄴ'], door: ['A'] };
+  const ex = [{ name: '휴일', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL }];
+  const s = R.ceBuildSchedule(CFG, rot, ex, '2026-09-05');
+  assert.strictEqual(s.byIso['2026-09-01'].preacher, '');
+  assert.strictEqual(s.byIso['2026-09-01'].broadcast, '');
+  assert.strictEqual(s.byIso['2026-09-01'].offSermon, true);
+  assert.strictEqual(s.byIso['2026-09-01'].offBroadcast, true);
+});
+
+test('휴일에는 로테이션 순번이 소모되지 않는다', () => {
+  const rot = { sermon: ['가', '나', '다'], broadcast: ['ㄱ', 'ㄴ'], door: ['A'] };
+  const ex = [{ name: '휴일', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL }];
+  const s = R.ceBuildSchedule(CFG, rot, ex, '2026-09-05');
+  assert.strictEqual(s.byIso['2026-08-31'].preacher, '가');
+  assert.strictEqual(s.byIso['2026-09-01'].preacher, '');
+  assert.strictEqual(s.byIso['2026-09-02'].preacher, '나');   // 쉬어도 '나' 차례가 그대로 온다
+  assert.strictEqual(s.byIso['2026-09-03'].preacher, '다');
+});
+
+test('휴가 스킵과 달리 휴일은 아무 순번도 건드리지 않는다', () => {
+  const rot = { sermon: ['가', '나', '다'], broadcast: ['ㄱ'], door: ['A'] };
+  const withHoliday = R.ceBuildSchedule(
+    CFG, rot, [{ name: '휴일', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL }], '2026-09-05');
+  const withLeave = R.ceBuildSchedule(
+    CFG, rot, [{ name: '나', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL }], '2026-09-05');
+  assert.strictEqual(withHoliday.byIso['2026-09-02'].preacher, '나');
+  assert.strictEqual(withLeave.byIso['2026-09-02'].preacher, '가');
+});
+
+test('휴일(방송) 은 방송실만 비운다', () => {
+  const rot = { sermon: ['가', '나'], broadcast: ['ㄱ', 'ㄴ'], door: ['A'] };
+  const ex = [{ name: '휴일', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.BROADCAST }];
+  const s = R.ceBuildSchedule(CFG, rot, ex, '2026-09-05');
+  assert.strictEqual(s.byIso['2026-09-01'].preacher, '나');    // 설교는 그대로 배정
+  assert.strictEqual(s.byIso['2026-09-01'].broadcast, '');
+  assert.strictEqual(s.byIso['2026-09-01'].offBroadcast, true);
+  assert.strictEqual(s.byIso['2026-09-01'].offSermon, false);
+  assert.strictEqual(s.byIso['2026-09-02'].broadcast, 'ㄴ');   // 방송 순번은 그대로
+});
+
+test('수요일이 휴일이면 수요저녁 현관도 비고 순번이 유지된다', () => {
+  const rot = { sermon: ['가'], broadcast: ['ㄱ'], door: ['A', 'B', 'C'] };
+  const ex = [{ name: '휴일', start: '2026-09-09', end: '2026-09-09', role: R.CE_ROLE.ALL }];
+  const s = R.ceBuildSchedule(CFG, rot, ex, '2026-09-16');
+  assert.strictEqual(s.byIso['2026-09-02'].door, 'A');
+  assert.strictEqual(s.byIso['2026-09-09'].door, '');
+  assert.strictEqual(s.byIso['2026-09-09'].offDoor, true);
+  assert.strictEqual(s.byIso['2026-09-16'].door, 'B');
+});
+
+test('기간으로 잡은 휴일 (성탄 연휴 등)', () => {
+  const rot = { sermon: ['가', '나'], broadcast: ['ㄱ'], door: ['A'] };
+  const ex = [{ name: '휴일', start: '2026-09-01', end: '2026-09-04', role: R.CE_ROLE.ALL }];
+  const s = R.ceBuildSchedule(CFG, rot, ex, '2026-09-05');
+  ['2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04'].forEach(iso => {
+    assert.strictEqual(s.byIso[iso].preacher, '', iso);
+    assert.strictEqual(s.byIso[iso].broadcast, '', iso);
+  });
+  assert.strictEqual(s.byIso['2026-08-31'].preacher, '가');
+  assert.strictEqual(s.byIso['2026-09-05'].preacher, '나');
+});
+
+test('휴일인 날은 방송실 교대 상대로 쓰이지 않는다', () => {
+  // 9/1 이 휴일이라 방송실이 비어 있으므로, 8/31 의 충돌은 9/2 와 맞바꿔 푼다
+  const rot = { sermon: ['가', '나', '다'], broadcast: ['가', '나', '다'], door: ['A'] };
+  const ex = [{ name: '휴일', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL }];
+  const s = R.ceBuildSchedule(CFG, rot, ex, '2026-09-05');
+  assert.strictEqual(s.byIso['2026-09-01'].broadcast, '');
+  assert.notStrictEqual(s.byIso['2026-08-31'].preacher, s.byIso['2026-08-31'].broadcast);
+  assert.strictEqual(s.byIso['2026-08-31'].broadcast, '나');
+  assert.strictEqual(s.byIso['2026-09-02'].broadcast, '가');
+});
+
+test('휴일 대신 쓸 수 있는 말들', () => {
+  ['휴일', '휴무', '없음', '직접입력'].forEach(word => {
+    assert.strictEqual(R.ceIsHolidayName(word), true, word);
+  });
+  assert.strictEqual(R.ceIsHolidayName('홍길동'), false);
+  assert.strictEqual(R.ceIsHolidayName(' 휴일 '), true);
+});
+
+test('휴일 판정은 역할 범위를 지킨다', () => {
+  const ex = [{ name: '휴일', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.DOOR }];
+  assert.strictEqual(R.ceIsHoliday('2026-09-01', R.CE_ROLE.DOOR, ex), true);
+  assert.strictEqual(R.ceIsHoliday('2026-09-01', R.CE_ROLE.SERMON, ex), false);
+  assert.strictEqual(R.ceIsHoliday('2026-09-02', R.CE_ROLE.DOOR, ex), false);
 });
 
 test('요일 목록 파싱', () => {

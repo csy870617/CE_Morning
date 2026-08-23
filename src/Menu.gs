@@ -99,7 +99,16 @@ function ceMenuCheck() {
     lines.push('방송 ' + rot.broadcast.length + '명 : ' + (rot.broadcast.join(', ') || '(비어 있음)'));
     lines.push('수요현관 ' + rot.door.length + '명 : ' + (rot.door.join(', ') || '(비어 있음)'));
     lines.push('');
-    lines.push('등록된 예외 ' + ex.length + '건');
+    var holidayCount = 0;
+    ex.forEach(function (e) { if (ceIsHolidayName(e.name)) holidayCount++; });
+    lines.push('등록된 예외 ' + (ex.length - holidayCount) + '건, 휴일 ' + holidayCount + '건');
+
+    var leftover = ceSS().getSheetByName('장기예외');
+    if (leftover) {
+      lines.push('');
+      lines.push('※ [장기예외] 탭은 이제 쓰지 않습니다. 거기 적으신 내용은 배정에 반영되지 않으니');
+      lines.push('   [달력] 탭으로 옮기신 뒤 탭을 지워 주세요.');
+    }
 
     var unknown = ceUnknownNames(rot, ex);
     if (unknown.length) {
@@ -120,6 +129,7 @@ function ceUnknownNames(rot, exceptions) {
   var seen = {};
   var out = [];
   exceptions.forEach(function (e) {
+    if (ceIsHolidayName(e.name)) return;          // '휴일' 은 사람 이름이 아닙니다
     if (!known[e.name] && !seen[e.name]) { seen[e.name] = true; out.push(e.name); }
   });
   return out;

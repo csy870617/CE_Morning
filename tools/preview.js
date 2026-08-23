@@ -13,7 +13,8 @@ const rotations = {
 };
 const exceptions = [
   { name: '이목사', start: '2026-09-07', end: '2026-09-12', role: R.CE_ROLE.ALL },
-  { name: '정집사', start: '2026-09-02', end: '2026-09-02', role: R.CE_ROLE.BROADCAST }
+  { name: '정집사', start: '2026-09-02', end: '2026-09-02', role: R.CE_ROLE.BROADCAST },
+  { name: '휴일', start: '2026-09-16', end: '2026-09-17', role: R.CE_ROLE.ALL }
 ];
 
 const grid = R.ceMonthGrid(year, month);
@@ -33,9 +34,9 @@ for (const week of grid.weeks) {
   for (const cell of week) {
     const a = sched.byIso[cell.iso] || {};
     rows.Date.push(cell.inMonth ? cell.day : `(${cell.day})`);
-    rows['설교자'].push(a.preacher || '-');
-    rows['방송실'].push((a.broadcast || '-') + (a.swapNote ? '*' : ''));
-    rows['수요저녁 현관'].push(a.door || '');
+    rows['설교자'].push(a.offSermon ? '[휴일]' : (a.preacher || '-'));
+    rows['방송실'].push(a.offBroadcast ? '[휴일]' : (a.broadcast || '-') + (a.swapNote ? '*' : ''));
+    rows['수요저녁 현관'].push(a.offDoor ? '[휴일]' : (a.door || ''));
   }
   console.log('-'.repeat(86));
   for (const label of Object.keys(rows)) {
@@ -44,4 +45,5 @@ for (const week of grid.weeks) {
 }
 console.log('-'.repeat(86));
 console.log('\n* 설교자와 겹쳐 다음날 방송실과 맞바꾼 자리');
-console.log('예외: 이목사 9/7~9/12 휴가, 정집사 9/2 방송 제외\n');
+console.log('[휴일] 은 시트에서 빈 칸으로 나옵니다 (직접 입력)');
+console.log('예외: 이목사 9/7~9/12 휴가, 정집사 9/2 방송 제외, 9/16~9/17 휴일\n');

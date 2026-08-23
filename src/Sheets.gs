@@ -6,7 +6,6 @@ var CE_TAB = {
   SETTINGS: '설정',
   ROTATION: '로테이션',
   CALENDAR: '달력',
-  LEAVE: '장기예외',
   STORE: '_달력저장'
 };
 
@@ -15,6 +14,7 @@ var CE_COLOR = {
   HEAD_BG: '#588fad',
   BAND_BG: '#efefef',
   WARN_BG: '#f4cccc',
+  HOLIDAY_BG: '#fff2cc',
   OUT_OF_MONTH: '#999999',
   BORDER: '#b7b7b7'
 };
@@ -98,7 +98,7 @@ function ceReadRotations() {
 }
 
 /* ------------------------------------------------------------------ */
-/* 예외 - 달력 그리드 저장분 + 장기예외 표                              */
+/* 예외 - 달력 탭에 적어 둔 휴가·휴일                                   */
 /* ------------------------------------------------------------------ */
 
 /** 숨김 시트에 쌓아 둔 하루짜리 예외를 읽습니다. */
@@ -136,24 +136,7 @@ function ceRoleLabel(role) {
   return '전체';
 }
 
-/** 장기예외 표를 읽습니다. */
-function ceReadLeaveTable() {
-  var sh = ceSheet(CE_TAB.LEAVE, false);
-  if (!sh || sh.getLastRow() < 2) return [];
-  var values = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues();
-  var out = [];
-  for (var i = 0; i < values.length; i++) {
-    var name = String(values[i][0] == null ? '' : values[i][0]).trim();
-    var start = ceCellToIso(values[i][1]);
-    if (!name || !start) continue;
-    var end = ceCellToIso(values[i][2]) || start;
-    if (end < start) { var t = end; end = start; start = t; }
-    out.push({ name: name, start: start, end: end, role: ceNormalizeRole(values[i][3]) });
-  }
-  return out;
-}
-
-/** 달력 + 장기예외를 합친 전체 예외 목록. */
+/** 예외(휴가·휴일)는 전부 달력 탭에서 옵니다. */
 function ceReadAllExceptions() {
-  return ceReadStoredExceptions().concat(ceReadLeaveTable());
+  return ceReadStoredExceptions();
 }

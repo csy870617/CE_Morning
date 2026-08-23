@@ -77,6 +77,30 @@ test('이름 칸: 적었다 읽었다 해도 그대로다', () => {
   assert.deepStrictEqual(plain(ctx.ceParseNameCell(ctx.ceFormatNameCell(entries))), entries);
 });
 
+test("이름 칸에 '휴일' 을 적으면 휴일로 읽힌다", () => {
+  const out = plain(ctx.ceParseNameCell('휴일'));
+  assert.deepStrictEqual(out, [{ name: '휴일', role: ctx.CE_ROLE.ALL }]);
+  assert.strictEqual(ctx.ceIsHoliday('2026-09-01', ctx.CE_ROLE.SERMON,
+    [{ name: out[0].name, start: '2026-09-01', end: '2026-09-01', role: out[0].role }]), true);
+});
+
+test("'휴일(방송)' 은 방송 역할로 읽힌다", () => {
+  const out = plain(ctx.ceParseNameCell('휴일(방송)'));
+  assert.deepStrictEqual(out, [{ name: '휴일', role: ctx.CE_ROLE.BROADCAST }]);
+});
+
+test("'휴일' 과 사람 이름을 같이 적어도 각각 읽힌다", () => {
+  const out = plain(ctx.ceParseNameCell('휴일(방송), 홍길동'));
+  assert.deepStrictEqual(out.map(e => e.name), ['휴일', '홍길동']);
+  assert.strictEqual(ctx.ceIsHolidayName(out[0].name), true);
+  assert.strictEqual(ctx.ceIsHolidayName(out[1].name), false);
+});
+
+test("'휴일' 도 적었다 읽었다 해도 그대로다", () => {
+  const entries = [{ name: '휴일', role: ctx.CE_ROLE.BROADCAST }];
+  assert.deepStrictEqual(plain(ctx.ceParseNameCell(ctx.ceFormatNameCell(entries))), entries);
+});
+
 test('연월 파싱', () => {
   assert.deepStrictEqual(plain(ctx.ceParseYearMonth('2026-09')), { year: 2026, month: 9 });
   assert.deepStrictEqual(plain(ctx.ceParseYearMonth('2026년 9월')), { year: 2026, month: 9 });
