@@ -68,6 +68,9 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
   var sh = ceSheet(ceMonthSheetName(year, month), true);
   sh.clear();
   sh.clearNotes();
+  // 지난번에 그린 병합을 먼저 풉니다. 주 수가 5주/6주로 달라지면
+  // 예전 병합이 엉뚱한 자리에 남습니다.
+  sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).breakApart();
 
   var totalCols = CE_OUT.FIRST_COL + CE_OUT.COLS - 1;   // G열
 
@@ -161,6 +164,9 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
 
   sh.setColumnWidth(1, 90);
   for (var col2 = CE_OUT.FIRST_COL; col2 <= totalCols; col2++) sh.setColumnWidth(col2, 100);
-  sh.setFrozenColumns(1);
+  // 열 고정은 쓰지 않습니다. 제목 줄과 맨 아래 설명 줄이 A~G로 병합되어 있어서
+  // 1열만 고정하면 병합된 칸이 갈라져 구글 시트가 막습니다. 표가 7열뿐이라
+  // 가로로 밀 일도 없으므로, 대신 위쪽 두 줄을 고정합니다.
+  sh.setFrozenRows(CE_OUT.DOW_ROW);
   return sh;
 }

@@ -140,6 +140,8 @@ function ceRenderCalendar(year, month) {
   var weeks = ceCalendarWeeks(year, month);
   sh.clear();
   sh.clearNotes();
+  // 달마다 주 수가 5주/6주로 달라지므로 지난번 병합을 먼저 풉니다.
+  sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).breakApart();
 
   sh.getRange(CE_CAL.YM_ROW, 1).setValue('연월').setFontWeight('bold');
   sh.getRange(CE_CAL.YM_ROW, CE_CAL.YM_COL).setValue(ceFormatYearMonth(year, month))
