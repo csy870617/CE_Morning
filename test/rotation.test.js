@@ -67,6 +67,58 @@ test('기간 휴가는 그 기간 내내 제외된다', () => {
     .forEach(iso => assert.strictEqual(s.byIso[iso].preacher, '가', iso));
 });
 
+test('같은 날 여러 명이 빠지면 가능한 사람이 나올 때까지 건너뛴다', () => {
+  const rot = { sermon: ['김', '이', '박', '최', '정'], broadcast: ['ㄱ'], door: ['A'] };
+  const ex = [
+    { name: '이', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL },
+    { name: '박', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL }
+  ];
+  const s = R.ceBuildSchedule(CFG, rot, ex, '2026-09-05');
+  assert.strictEqual(s.byIso['2026-08-31'].preacher, '김');
+  assert.strictEqual(s.byIso['2026-09-01'].preacher, '최');   // 이·박 둘 다 건너뜀
+  assert.strictEqual(s.byIso['2026-09-02'].preacher, '정');
+  assert.strictEqual(s.byIso['2026-09-03'].preacher, '김');
+  assert.strictEqual(s.byIso['2026-09-04'].preacher, '이');   // 건너뛴 차례가 다음 바퀴에 돌아온다
+  assert.strictEqual(s.byIso['2026-09-05'].preacher, '박');
+});
+
+test('명단 한 명 빼고 전부 빠져도 그 한 명이 들어간다', () => {
+  const rot = { sermon: ['김', '이', '박', '최'], broadcast: ['ㄱ'], door: ['A'] };
+  const ex = ['김', '이', '박'].map(n =>
+    ({ name: n, start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL }));
+  const s = R.ceBuildSchedule(CFG, rot, ex, '2026-09-01');
+  assert.strictEqual(s.byIso['2026-09-01'].preacher, '최');
+  assert.strictEqual(s.byIso['2026-09-01'].warning, '');
+});
+
+test('설교와 방송에서 각각 여러 명이 빠져도 서로 간섭하지 않는다', () => {
+  const rot = { sermon: ['김', '이', '박'], broadcast: ['ㄱ', 'ㄴ', 'ㄷ'], door: ['A'] };
+  const ex = [
+    { name: '김', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL },
+    { name: '이', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL },
+    { name: 'ㄴ', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL },
+    { name: 'ㄷ', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL }
+  ];
+  const s = R.ceBuildSchedule(CFG, rot, ex, '2026-09-01');
+  assert.strictEqual(s.byIso['2026-09-01'].preacher, '박');
+  assert.strictEqual(s.byIso['2026-09-01'].broadcast, 'ㄱ');
+});
+
+test('여러 명이 여러 날에 걸쳐 겹쳐 빠지는 경우', () => {
+  const rot = { sermon: ['김', '이', '박', '최'], broadcast: ['ㄱ'], door: ['A'] };
+  const ex = [
+    { name: '이', start: '2026-08-31', end: '2026-09-02', role: R.CE_ROLE.ALL },
+    { name: '박', start: '2026-09-01', end: '2026-09-03', role: R.CE_ROLE.ALL }
+  ];
+  const s = R.ceBuildSchedule(CFG, rot, ex, '2026-09-05');
+  assert.strictEqual(s.byIso['2026-08-31'].preacher, '김');
+  assert.strictEqual(s.byIso['2026-09-01'].preacher, '최');   // 이·박 모두 휴가
+  assert.strictEqual(s.byIso['2026-09-02'].preacher, '김');
+  assert.strictEqual(s.byIso['2026-09-03'].preacher, '이');   // 이는 9/3 복귀, 박은 아직 휴가
+  assert.strictEqual(s.byIso['2026-09-04'].preacher, '박');   // 박도 복귀
+  assert.strictEqual(s.byIso['2026-09-05'].preacher, '최');
+});
+
 test('달력에 하루씩 찍은 여러 날도 기간 휴가와 똑같이 동작한다', () => {
   // 달력 탭은 하루짜리 기록만 쌓으므로, 실제로는 이 모양으로 들어옵니다.
   const rot = { sermon: ['가', '나'], broadcast: ['ㄱ'], door: ['A'] };

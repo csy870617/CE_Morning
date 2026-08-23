@@ -77,6 +77,13 @@ test('이름 칸: 적었다 읽었다 해도 그대로다', () => {
   assert.deepStrictEqual(plain(ctx.ceParseNameCell(ctx.ceFormatNameCell(entries))), entries);
 });
 
+test('이름 칸에 여러 명을 적으면 전부 읽힌다', () => {
+  const out = plain(ctx.ceParseNameCell('이목사, 박전도사, 최목사(방송)'));
+  assert.deepStrictEqual(out.map(e => e.name), ['이목사', '박전도사', '최목사']);
+  assert.deepStrictEqual(out.map(e => e.role),
+    [ctx.CE_ROLE.ALL, ctx.CE_ROLE.ALL, ctx.CE_ROLE.BROADCAST]);
+});
+
 test("이름 칸에 '휴일' 을 적으면 휴일로 읽힌다", () => {
   const out = plain(ctx.ceParseNameCell('휴일'));
   assert.deepStrictEqual(out, [{ name: '휴일', role: ctx.CE_ROLE.ALL }]);
