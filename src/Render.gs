@@ -2,7 +2,7 @@
  * 월별 배정 표를 그립니다. (원래 쓰시던 표와 같은 모양)
  *
  *   A열 = 항목 이름,  B~G열 = 월~토
- *   한 주마다 Date / 설교자 / 방송실 / 수요현관·토요찬양 네 줄
+ *   한 주마다 Date / 설교자 / 방송실 / 수요·토요 네 줄
  */
 
 var CE_OUT = {
@@ -13,7 +13,7 @@ var CE_OUT = {
   FIRST_COL: 2      // B열
 };
 
-var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요현관/토요찬양'];
+var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요/토요'];
 
 /**
  * 넷째 줄은 요일에 따라 내용이 바뀝니다.
@@ -62,7 +62,7 @@ function ceGenerateMonth(year, month) {
   var sched = ceBuildSchedule(cfg, rot, ex, grid.endIso);
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
 
-  var notes = ceFallbackNotes(rot);
+  var notes = ceFallbackNotes(rot, cfg);
   return {
     sheetName: ceMonthSheetName(year, month),
     warnings: ceCollectWarnings(grid, sched, cfg),
@@ -70,21 +70,44 @@ function ceGenerateMonth(year, month) {
   };
 }
 
-/** 비어 있어서 평일 명단으로 돌고 있는 토요 명단을 알려 줍니다. */
-function ceFallbackNotes(rot) {
+/**
+ * 명단이 왜 안 쓰이고 있는지 알려 줍니다.
+ * 열 자체를 못 찾은 것과, 열은 있는데 이름이 안 적힌 것을 구분합니다.
+ */
+function ceFallbackNotes(rot, cfg) {
+  var cols = rot._columns || {};
   var notes = [];
-  if (!(rot.satSermon || []).length) {
-    notes.push('[토요설교] 명단이 비어 있어 토요일도 [설교] 명단으로 이어서 돌았습니다.');
+
+  // 토요일이 새벽예배 요일에 없으면 토요일 칸은 아예 비어 있게 됩니다.
+  var satMissing = [];
+  for (var d = 0; d < cfg.satDows.length; d++) {
+    if (cfg.dawnDows.indexOf(cfg.satDows[d]) < 0) satMissing.push(CE_DOW_NAMES[cfg.satDows[d]]);
   }
-  if (!(rot.satBroadcast || []).length) {
-    notes.push('[토요방송] 명단이 비어 있어 토요일도 [방송] 명단으로 이어서 돌았습니다.');
+  if (satMissing.length) {
+    notes.push('[설정] 탭의 [새벽예배 요일] 에 ' + satMissing.join('·') + '요일이 없습니다. ' +
+      '그래서 그 요일은 설교자·방송실을 아예 배정하지 않습니다.');
   }
-  if (!(rot.praise || []).length) {
-    notes.push('[토요찬양] 명단이 비어 있어 토요일 넷째 줄은 비워 두었습니다.');
+  var praiseMissing = [];
+  for (var q = 0; q < cfg.praiseDows.length; q++) {
+    if (cfg.dawnDows.indexOf(cfg.praiseDows[q]) < 0) praiseMissing.push(CE_DOW_NAMES[cfg.praiseDows[q]]);
   }
-  if (!(rot.door || []).length) {
-    notes.push('[수요현관] 명단이 비어 있어 수요일 넷째 줄은 비워 두었습니다.');
+  void praiseMissing;   // 토요찬양은 새벽예배와 무관하므로 알리지 않습니다.
+
+  function check(key, header, whenEmpty) {
+    if (!cols[key]) {
+      notes.push('[' + header + '] 열을 "' + CE_TAB.ROTATION + '" 탭에서 찾지 못했습니다. ' +
+        '[① 초기 설정 만들기] 를 한 번 더 눌러 주세요.');
+      return;
+    }
+    if (!(rot[key] || []).length) {
+      notes.push('[' + header + '] 열(' + ceColumnLetter(cols[key]) + '열)에 이름이 없습니다. ' + whenEmpty);
+    }
   }
+
+  check('satSermon', '토요설교', '토요일도 [설교] 명단으로 이어서 돌았습니다.');
+  check('satBroadcast', '토요방송', '토요일도 [방송] 명단으로 이어서 돌았습니다.');
+  check('door', '수요현관', '수요일 넷째 줄은 비워 두었습니다.');
+  check('praise', '토요찬양', '토요일 넷째 줄은 비워 두었습니다.');
   return notes;
 }
 

@@ -540,16 +540,34 @@ function ceReadConfig() {
  * 그래야 열 순서를 바꾸거나 중간에 열을 끼워 넣어도 어긋나지 않습니다.
  */
 var CE_ROTATION_COLUMNS = [
-  { key: 'sermon', header: '설교', aliases: ['설교', '설교자', '평일설교'] },
-  { key: 'broadcast', header: '방송', aliases: ['방송', '방송실', '평일방송'] },
-  { key: 'satSermon', header: '토요설교', aliases: ['토요설교', '토설교'] },
-  { key: 'satBroadcast', header: '토요방송', aliases: ['토요방송', '토방송', '토요방송실'] },
-  { key: 'door', header: '수요현관', aliases: ['수요현관', '현관', '수요저녁현관'] },
-  { key: 'praise', header: '토요찬양', aliases: ['토요찬양', '찬양'] }
+  { key: 'sermon', header: '설교' },
+  { key: 'broadcast', header: '방송' },
+  { key: 'satSermon', header: '토요설교' },
+  { key: 'satBroadcast', header: '토요방송' },
+  { key: 'door', header: '수요현관' },
+  { key: 'praise', header: '토요찬양' }
 ];
 
 function ceNormalizeHeader(v) {
   return String(v == null ? '' : v).replace(/\s+/g, '');
+}
+
+/**
+ * 머리글 한 칸이 어느 명단인지 알아냅니다.
+ * '토요 설교', '토요설교자', '방송실' 처럼 조금 달라도 알아보도록 낱말로 찾습니다.
+ * 안내 문구가 머리글로 오인되지 않게 짧은 글만 봅니다.
+ */
+function ceMatchRotationKey(header) {
+  var h = ceNormalizeHeader(header);
+  if (!h || h.length > 8) return '';
+  if (/[.,!?()]/.test(h)) return '';
+
+  var sat = h.indexOf('토') >= 0;
+  if (h.indexOf('찬양') >= 0) return 'praise';
+  if (h.indexOf('현관') >= 0) return 'door';
+  if (h.indexOf('설교') >= 0) return sat ? 'satSermon' : 'sermon';
+  if (h.indexOf('방송') >= 0) return sat ? 'satBroadcast' : 'broadcast';
+  return '';
 }
 
 /** 머리글 이름 -> 열 번호(1부터). 못 찾은 명단은 빠집니다. */
@@ -558,15 +576,22 @@ function ceRotationColumnMap(sh) {
   var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
   var found = {};
   for (var c = 0; c < headers.length; c++) {
-    var h = ceNormalizeHeader(headers[c]);
-    if (!h) continue;
-    for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) {
-      var def = CE_ROTATION_COLUMNS[i];
-      if (found[def.key]) continue;
-      if (def.aliases.indexOf(h) >= 0) { found[def.key] = c + 1; break; }
-    }
+    var key = ceMatchRotationKey(headers[c]);
+    if (key && !found[key]) found[key] = c + 1;
   }
   return found;
+}
+
+/** 1 -> 'A', 27 -> 'AA' */
+function ceColumnLetter(col) {
+  var out = '';
+  var n = col;
+  while (n > 0) {
+    var rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
 }
 
 function ceEmptyRotations() {
@@ -580,10 +605,12 @@ function ceReadRotations() {
   if (!sh) throw new Error('"' + CE_TAB.ROTATION + '" 탭이 없습니다. 메뉴에서 [초기 설정 만들기] 를 먼저 눌러 주세요.');
 
   var rot = ceEmptyRotations();
+  var colMap = ceRotationColumnMap(sh);
+  rot._columns = colMap;
+
   var lastRow = sh.getLastRow();
   if (lastRow < 2) return rot;
 
-  var colMap = ceRotationColumnMap(sh);
   var lastCol = Math.max(sh.getLastColumn(), 1);
   var values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
 
@@ -845,7 +872,7 @@ function ceRenderCalendar(year, month) {
  * 월별 배정 표를 그립니다. (원래 쓰시던 표와 같은 모양)
  *
  *   A열 = 항목 이름,  B~G열 = 월~토
- *   한 주마다 Date / 설교자 / 방송실 / 수요현관·토요찬양 네 줄
+ *   한 주마다 Date / 설교자 / 방송실 / 수요·토요 네 줄
  */
 
 var CE_OUT = {
@@ -856,7 +883,7 @@ var CE_OUT = {
   FIRST_COL: 2      // B열
 };
 
-var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요현관/토요찬양'];
+var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요/토요'];
 
 /**
  * 넷째 줄은 요일에 따라 내용이 바뀝니다.
@@ -905,7 +932,7 @@ function ceGenerateMonth(year, month) {
   var sched = ceBuildSchedule(cfg, rot, ex, grid.endIso);
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
 
-  var notes = ceFallbackNotes(rot);
+  var notes = ceFallbackNotes(rot, cfg);
   return {
     sheetName: ceMonthSheetName(year, month),
     warnings: ceCollectWarnings(grid, sched, cfg),
@@ -913,21 +940,44 @@ function ceGenerateMonth(year, month) {
   };
 }
 
-/** 비어 있어서 평일 명단으로 돌고 있는 토요 명단을 알려 줍니다. */
-function ceFallbackNotes(rot) {
+/**
+ * 명단이 왜 안 쓰이고 있는지 알려 줍니다.
+ * 열 자체를 못 찾은 것과, 열은 있는데 이름이 안 적힌 것을 구분합니다.
+ */
+function ceFallbackNotes(rot, cfg) {
+  var cols = rot._columns || {};
   var notes = [];
-  if (!(rot.satSermon || []).length) {
-    notes.push('[토요설교] 명단이 비어 있어 토요일도 [설교] 명단으로 이어서 돌았습니다.');
+
+  // 토요일이 새벽예배 요일에 없으면 토요일 칸은 아예 비어 있게 됩니다.
+  var satMissing = [];
+  for (var d = 0; d < cfg.satDows.length; d++) {
+    if (cfg.dawnDows.indexOf(cfg.satDows[d]) < 0) satMissing.push(CE_DOW_NAMES[cfg.satDows[d]]);
   }
-  if (!(rot.satBroadcast || []).length) {
-    notes.push('[토요방송] 명단이 비어 있어 토요일도 [방송] 명단으로 이어서 돌았습니다.');
+  if (satMissing.length) {
+    notes.push('[설정] 탭의 [새벽예배 요일] 에 ' + satMissing.join('·') + '요일이 없습니다. ' +
+      '그래서 그 요일은 설교자·방송실을 아예 배정하지 않습니다.');
   }
-  if (!(rot.praise || []).length) {
-    notes.push('[토요찬양] 명단이 비어 있어 토요일 넷째 줄은 비워 두었습니다.');
+  var praiseMissing = [];
+  for (var q = 0; q < cfg.praiseDows.length; q++) {
+    if (cfg.dawnDows.indexOf(cfg.praiseDows[q]) < 0) praiseMissing.push(CE_DOW_NAMES[cfg.praiseDows[q]]);
   }
-  if (!(rot.door || []).length) {
-    notes.push('[수요현관] 명단이 비어 있어 수요일 넷째 줄은 비워 두었습니다.');
+  void praiseMissing;   // 토요찬양은 새벽예배와 무관하므로 알리지 않습니다.
+
+  function check(key, header, whenEmpty) {
+    if (!cols[key]) {
+      notes.push('[' + header + '] 열을 "' + CE_TAB.ROTATION + '" 탭에서 찾지 못했습니다. ' +
+        '[① 초기 설정 만들기] 를 한 번 더 눌러 주세요.');
+      return;
+    }
+    if (!(rot[key] || []).length) {
+      notes.push('[' + header + '] 열(' + ceColumnLetter(cols[key]) + '열)에 이름이 없습니다. ' + whenEmpty);
+    }
   }
+
+  check('satSermon', '토요설교', '토요일도 [설교] 명단으로 이어서 돌았습니다.');
+  check('satBroadcast', '토요방송', '토요일도 [방송] 명단으로 이어서 돌았습니다.');
+  check('door', '수요현관', '수요일 넷째 줄은 비워 두었습니다.');
+  check('praise', '토요찬양', '토요일 넷째 줄은 비워 두었습니다.');
   return notes;
 }
 
@@ -1390,15 +1440,30 @@ function ceMenuCheck() {
     lines.push('수요현관 요일 : ' + dows(cfg.doorDows));
     lines.push('토요찬양 요일 : ' + dows(cfg.praiseDows));
     lines.push('');
+    var cols = rot._columns || {};
     for (var ci = 0; ci < CE_ROTATION_COLUMNS.length; ci++) {
       var def = CE_ROTATION_COLUMNS[ci];
       var list = rot[def.key] || [];
-      lines.push(def.header + ' ' + list.length + '명 : ' + (list.join(', ') || '(비어 있음)'));
+      var where = cols[def.key] ? ceColumnLetter(cols[def.key]) + '열' : '열을 못 찾음';
+      lines.push(def.header + ' [' + where + '] ' + list.length + '명 : ' + (list.join(', ') || '(비어 있음)'));
+    }
+
+    var missing = [];
+    for (var mi = 0; mi < CE_ROTATION_COLUMNS.length; mi++) {
+      if (!cols[CE_ROTATION_COLUMNS[mi].key]) missing.push(CE_ROTATION_COLUMNS[mi].header);
+    }
+    if (missing.length) {
+      lines.push('');
+      lines.push('※ 열을 못 찾은 명단: ' + missing.join(', '));
+      lines.push('   [① 초기 설정 만들기] 를 한 번 더 누르면 열을 만들어 드립니다.');
     }
     if (!rot.satSermon.length || !rot.satBroadcast.length) {
       lines.push('');
       lines.push('※ 토요 명단이 비어 있는 쪽은 평일 명단으로 그냥 이어서 돕니다.');
     }
+
+    lines.push('');
+    lines.push('[' + CE_TAB.ROTATION + '] 탭 1행에 적힌 그대로: ' + ceRotationHeaderRow());
     lines.push('');
     var holidayCount = 0;
     ex.forEach(function (e) { if (ceIsHolidayName(e.name)) holidayCount++; });
@@ -1420,6 +1485,21 @@ function ceMenuCheck() {
   } catch (e) {
     ui.alert('오류: ' + e.message);
   }
+}
+
+/** 로테이션 탭 1행을 있는 그대로 보여 줍니다. 머리글 오타를 찾을 때 씁니다. */
+function ceRotationHeaderRow() {
+  var sh = ceSheet(CE_TAB.ROTATION, false);
+  if (!sh) return '(탭 없음)';
+  var lastCol = Math.max(sh.getLastColumn(), 1);
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var parts = [];
+  for (var c = 0; c < headers.length; c++) {
+    var text = String(headers[c] == null ? '' : headers[c]).trim();
+    if (text.length > 12) text = text.slice(0, 12) + '…';
+    parts.push(ceColumnLetter(c + 1) + '=' + (text || '(빈칸)'));
+  }
+  return parts.join('  ');
 }
 
 function ceUnknownNames(rot, exceptions) {

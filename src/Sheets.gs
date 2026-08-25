@@ -94,16 +94,34 @@ function ceReadConfig() {
  * 그래야 열 순서를 바꾸거나 중간에 열을 끼워 넣어도 어긋나지 않습니다.
  */
 var CE_ROTATION_COLUMNS = [
-  { key: 'sermon', header: '설교', aliases: ['설교', '설교자', '평일설교'] },
-  { key: 'broadcast', header: '방송', aliases: ['방송', '방송실', '평일방송'] },
-  { key: 'satSermon', header: '토요설교', aliases: ['토요설교', '토설교'] },
-  { key: 'satBroadcast', header: '토요방송', aliases: ['토요방송', '토방송', '토요방송실'] },
-  { key: 'door', header: '수요현관', aliases: ['수요현관', '현관', '수요저녁현관'] },
-  { key: 'praise', header: '토요찬양', aliases: ['토요찬양', '찬양'] }
+  { key: 'sermon', header: '설교' },
+  { key: 'broadcast', header: '방송' },
+  { key: 'satSermon', header: '토요설교' },
+  { key: 'satBroadcast', header: '토요방송' },
+  { key: 'door', header: '수요현관' },
+  { key: 'praise', header: '토요찬양' }
 ];
 
 function ceNormalizeHeader(v) {
   return String(v == null ? '' : v).replace(/\s+/g, '');
+}
+
+/**
+ * 머리글 한 칸이 어느 명단인지 알아냅니다.
+ * '토요 설교', '토요설교자', '방송실' 처럼 조금 달라도 알아보도록 낱말로 찾습니다.
+ * 안내 문구가 머리글로 오인되지 않게 짧은 글만 봅니다.
+ */
+function ceMatchRotationKey(header) {
+  var h = ceNormalizeHeader(header);
+  if (!h || h.length > 8) return '';
+  if (/[.,!?()]/.test(h)) return '';
+
+  var sat = h.indexOf('토') >= 0;
+  if (h.indexOf('찬양') >= 0) return 'praise';
+  if (h.indexOf('현관') >= 0) return 'door';
+  if (h.indexOf('설교') >= 0) return sat ? 'satSermon' : 'sermon';
+  if (h.indexOf('방송') >= 0) return sat ? 'satBroadcast' : 'broadcast';
+  return '';
 }
 
 /** 머리글 이름 -> 열 번호(1부터). 못 찾은 명단은 빠집니다. */
@@ -112,15 +130,22 @@ function ceRotationColumnMap(sh) {
   var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
   var found = {};
   for (var c = 0; c < headers.length; c++) {
-    var h = ceNormalizeHeader(headers[c]);
-    if (!h) continue;
-    for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) {
-      var def = CE_ROTATION_COLUMNS[i];
-      if (found[def.key]) continue;
-      if (def.aliases.indexOf(h) >= 0) { found[def.key] = c + 1; break; }
-    }
+    var key = ceMatchRotationKey(headers[c]);
+    if (key && !found[key]) found[key] = c + 1;
   }
   return found;
+}
+
+/** 1 -> 'A', 27 -> 'AA' */
+function ceColumnLetter(col) {
+  var out = '';
+  var n = col;
+  while (n > 0) {
+    var rem = (n - 1) % 26;
+    out = String.fromCharCode(65 + rem) + out;
+    n = Math.floor((n - 1) / 26);
+  }
+  return out;
 }
 
 function ceEmptyRotations() {
@@ -134,10 +159,12 @@ function ceReadRotations() {
   if (!sh) throw new Error('"' + CE_TAB.ROTATION + '" 탭이 없습니다. 메뉴에서 [초기 설정 만들기] 를 먼저 눌러 주세요.');
 
   var rot = ceEmptyRotations();
+  var colMap = ceRotationColumnMap(sh);
+  rot._columns = colMap;
+
   var lastRow = sh.getLastRow();
   if (lastRow < 2) return rot;
 
-  var colMap = ceRotationColumnMap(sh);
   var lastCol = Math.max(sh.getLastColumn(), 1);
   var values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
 

@@ -188,9 +188,9 @@ test('월별 표를 끝까지 그린다', () => {
   assert.strictEqual(sh.getRange(1, 1).getValue(), '2026년 9월 새벽 설교자 및 백업');
   assert.deepStrictEqual(plain(sh.getRange(2, 2, 1, 6).getValues()[0]), ['월', '화', '수', '목', '금', '토']);
 
-  // 첫 주 블록: 3행 Date / 4행 설교자 / 5행 방송실 / 6행 수요현관·토요찬양
+  // 첫 주 블록: 3행 Date / 4행 설교자 / 5행 방송실 / 6행 수요·토요
   assert.strictEqual(sh.getRange(3, 1).getValue(), 'Date');
-  assert.strictEqual(sh.getRange(6, 1).getValue(), '수요현관/토요찬양');
+  assert.strictEqual(sh.getRange(6, 1).getValue(), '수요/토요');
   assert.deepStrictEqual(plain(readRow(sh, 3, 0)), ['31', '1', '2', '3', '4', '5']);
 
   const preachers = readRow(sh, 3, 1);
@@ -291,6 +291,89 @@ test('명단이 비어 있으면 안내와 함께 멈춘다', () => {
 test('기준일보다 앞선 달은 안내와 함께 멈춘다', () => {
   const { ctx } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
   assert.throws(() => ctx.ceGenerateMonth(2026, 1), /로테이션 시작일/);
+});
+
+
+/* ---------- 머리글이 조금 달라도 알아보는지 ---------- */
+
+test('머리글이 조금 달라도 명단을 알아본다', () => {
+  const { ctx, ss } = load();
+  ctx.ceSetupAll();
+  const rot = ss.getSheetByName('로테이션');
+  rot.clear();
+  rot._set(1, 1, '설교자'); rot._set(2, 1, '김목사');
+  rot._set(1, 2, '방송실'); rot._set(2, 2, '정집사');
+  rot._set(1, 3, '토요 설교'); rot._set(2, 3, '강목사');
+  rot._set(1, 4, '토요 방송실'); rot._set(2, 4, '임집사');
+  rot._set(1, 5, '수요 현관'); rot._set(2, 5, '오권사');
+  rot._set(1, 6, '토요 찬양'); rot._set(2, 6, '서집사');
+
+  const read = ctx.ceReadRotations();
+  assert.deepStrictEqual(plain(read.sermon), ['김목사']);
+  assert.deepStrictEqual(plain(read.broadcast), ['정집사']);
+  assert.deepStrictEqual(plain(read.satSermon), ['강목사']);
+  assert.deepStrictEqual(plain(read.satBroadcast), ['임집사']);
+  assert.deepStrictEqual(plain(read.door), ['오권사']);
+  assert.deepStrictEqual(plain(read.praise), ['서집사']);
+});
+
+test('안내 문구는 머리글로 오인되지 않는다', () => {
+  const { ctx, ss } = load();
+  ctx.ceSetupAll();
+  const rot = ss.getSheetByName('로테이션');
+  rot.clear();
+  rot._set(1, 1, '설교'); rot._set(2, 1, '김목사');
+  // '수' 나 '설' 이 들어간 긴 안내 문구
+  rot._set(1, 2, '명단마다 인원 수는 서로 달라도 됩니다. 빈 칸은 알아서 건너뜁니다.');
+  rot._set(2, 2, '위에서 아래로 돌아갑니다');
+  const read = ctx.ceReadRotations();
+  assert.deepStrictEqual(plain(read.sermon), ['김목사']);
+  assert.deepStrictEqual(plain(read.door), []);
+  assert.deepStrictEqual(plain(read.broadcast), []);
+});
+
+test('열을 못 찾으면 비어 있는 것과 다르게 알려 준다', () => {
+  const { ctx, ss } = load();
+  ctx.ceSetupAll();
+
+  const settings = ss.getSheetByName('설정');
+  for (let r = 1; r <= settings.getLastRow(); r++) {
+    if (String(settings._get(r, 1)).trim() === '로테이션 시작일') settings._set(r, 2, '2026-08-31');
+  }
+
+  const rot = ss.getSheetByName('로테이션');
+  rot.clear();
+  rot._set(1, 1, '설교'); rot._set(2, 1, '김목사');
+  rot._set(1, 2, '방송'); rot._set(2, 2, '정집사');
+  rot._set(1, 3, '토요설교');            // 열은 있는데 이름이 없음
+
+  const out = ctx.ceGenerateMonth(2026, 9);
+  const joined = out.notes.join('\n');
+  assert.ok(joined.indexOf('[토요설교] 열(C열)에 이름이 없습니다') >= 0, joined);
+  assert.ok(joined.indexOf('[토요방송] 열을') >= 0 && joined.indexOf('찾지 못했습니다') >= 0, joined);
+});
+
+
+test("새벽예배 요일에 '토' 가 없으면 그 이유를 알려 준다", () => {
+  const { ctx, ss } = prepared({
+    '설교': ['김목사'], '방송': ['정집사'],
+    '토요설교': ['강목사'], '토요방송': ['임집사'],
+    '수요현관': ['오권사'], '토요찬양': ['서집사']
+  });
+  const settings = ss.getSheetByName('설정');
+  for (let r = 1; r <= settings.getLastRow(); r++) {
+    if (String(settings._get(r, 1)).trim() === '새벽예배 요일') settings._set(r, 2, '월,화,수,목,금');
+  }
+
+  const out = ctx.ceGenerateMonth(2026, 9);
+  assert.ok(out.notes.join('\n').indexOf('[새벽예배 요일] 에 토요일이 없습니다') >= 0, out.notes.join('\n'));
+
+  // 실제로 토요일 칸이 비어 있는지도 확인
+  const sh = ss.getSheetByName('2026-09');
+  assert.strictEqual(String(sh.getRange(4, 7).getValue()), '', '토요일 설교자 칸');
+  assert.strictEqual(String(sh.getRange(5, 7).getValue()), '', '토요일 방송실 칸');
+  // 토요찬양은 새벽예배와 무관하므로 그대로 들어간다
+  assert.strictEqual(String(sh.getRange(6, 7).getValue()), '서집사');
 });
 
 console.log('\n' + passed + ' passed');
