@@ -447,15 +447,36 @@ test('쓰지 않는 기록 탭을 만들지 않는다', () => {
 
 /* ---------- 달력 연월 드롭다운 ---------- */
 
-test('달력 연월 칸(B1)에 달 고르는 목록이 붙는다', () => {
+test('달력 연월 칸(B1)에 오늘 기준 앞뒤 12개월이 붙는다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
   ctx.ceRenderCalendar(2026, 9);
   const cal = ss.getSheetByName('달력(예외자)');
   const rule = cal.validations.get('1,2');
   assert.ok(rule, 'B1 에 목록이 있어야 한다');
-  assert.ok(rule.values.length >= 12, '고를 달이 여러 개여야 한다');
+  assert.strictEqual(rule.values.length, 25, '앞 12 + 이번 달 + 뒤 12');
   assert.ok(rule.values.every(v => /^\d{4}-\d{2}$/.test(v)), rule.values.slice(0, 3).join(','));
-  assert.ok(rule.values.indexOf('2026-09') >= 0, '지금 보는 달이 목록에 있어야 한다');
+
+  const now = new Date();
+  const p = n => String(n).padStart(2, '0');
+  const thisMonth = `${now.getFullYear()}-${p(now.getMonth() + 1)}`;
+  assert.strictEqual(rule.values[12], thisMonth, '가운데가 이번 달이어야 한다');
+});
+
+test('달력을 다시 그리지 않아도 시트를 열면 목록이 걸린다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
+  const cal = ss.getSheetByName('달력(예외자)');
+  cal.validations.clear();                       // 예전 버전으로 만들어져 목록이 없던 상태
+  assert.strictEqual(cal.validations.get('1,2'), undefined);
+
+  ctx.ceEnsureCalendarDropdown();                // onOpen 이 하는 일
+  const rule = cal.validations.get('1,2');
+  assert.ok(rule, '목록이 걸려야 한다');
+  assert.strictEqual(rule.values.length, 25);
+});
+
+test('달력 탭이 없으면 목록 걸기를 조용히 넘어간다', () => {
+  const { ctx } = load();
+  assert.strictEqual(ctx.ceEnsureCalendarDropdown(), false);
 });
 
 test('B1 을 바꾸면 그 달 달력이 그려진다', () => {

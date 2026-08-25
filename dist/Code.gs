@@ -720,16 +720,30 @@ function ceFormatYearMonth(year, month) {
   return year + '-' + (month < 10 ? '0' + month : month);
 }
 
-/** B1 드롭다운에 넣을 연월 목록. 오늘이 낀 달을 가운데 두고 앞뒤로 벌립니다. */
+/** B1 드롭다운에 넣을 연월 목록. 오늘 기준 앞뒤 12개월씩. */
 function ceMonthChoices() {
   var now = new Date();
-  var d = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 6, 1));
   var list = [];
-  for (var i = 0; i < 25; i++) {
+  for (var i = -12; i <= 12; i++) {
+    var d = new Date(Date.UTC(now.getFullYear(), now.getMonth() + i, 1));
     list.push(ceFormatYearMonth(d.getUTCFullYear(), d.getUTCMonth() + 1));
-    d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
   }
   return list;
+}
+
+/**
+ * 연월 칸(B1)에 달 고르는 목록을 붙입니다.
+ * 달력을 다시 그리지 않아도 목록이 살아 있도록, 시트를 열 때마다 한 번 걸어 둡니다.
+ */
+function ceEnsureCalendarDropdown() {
+  var sh = ceSheet(CE_TAB.CALENDAR, false);
+  if (!sh) return false;
+  sh.getRange(CE_CAL.YM_ROW, CE_CAL.YM_COL).setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireValueInList(ceMonthChoices(), true)
+      .setAllowInvalid(true)
+      .build());
+  return true;
 }
 
 /** 이름 칸 한 줄을 [{name, role}] 로 풉니다. */
@@ -802,13 +816,9 @@ function ceRenderCalendar(year, month) {
 
   var ymCell = sh.getRange(CE_CAL.YM_ROW, CE_CAL.YM_COL);
   ymCell.setNumberFormat('@');
-  ymCell.setDataValidation(
-    SpreadsheetApp.newDataValidation()
-      .requireValueInList(ceMonthChoices(), true)
-      .setAllowInvalid(true)
-      .build());
   ymCell.setValue(ceFormatYearMonth(year, month))
     .setFontWeight('bold').setBackground('#fff2cc').setHorizontalAlignment('center');
+  ceEnsureCalendarDropdown();
 
   sh.getRange(CE_CAL.YM_ROW, 3, 1, 5).merge()
     .setValue('◀ 이 칸을 눌러 달을 고르세요. 고르는 즉시 그 달 달력이 그려집니다 (이름 칸은 비워집니다).')
@@ -1325,13 +1335,20 @@ function ceSetupRotation() {
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('새벽예배 배정')
-    .addItem('배정하기', 'ceMenuGenerate')
-    .addItem('달력 다시 그리기', 'ceMenuRenderCalendar')
+    .addItem('새벽설교 배정표 만들기', 'ceMenuGenerate')
+    .addItem('달력 불러오기', 'ceMenuRenderCalendar')
     .addSeparator()
     .addItem('명단·예외 점검', 'ceMenuCheck')
-    .addSeparator()
     .addItem('초기 설정 만들기', 'ceMenuSetup')
     .addToUi();
+
+  // 달력 연월 칸의 목록은 시트를 열 때마다 다시 걸어 둡니다.
+  // (달력을 다시 그리지 않아도 목록이 뜨도록)
+  try {
+    ceEnsureCalendarDropdown();
+  } catch (err) {
+    // 목록을 못 걸어도 메뉴는 떠야 하므로 넘어갑니다.
+  }
 }
 
 /**
@@ -1369,7 +1386,7 @@ function ceMenuSetup() {
     if (!msg.length) msg.push('필요한 탭이 이미 모두 있습니다.');
     msg.push('');
     msg.push('[로테이션] 탭에 이름을 넣고, [설정] 탭의 로테이션 시작일을 확인한 뒤');
-    msg.push('[배정하기] 를 눌러 주세요.');
+    msg.push('[새벽설교 배정표 만들기] 를 눌러 주세요.');
     ui.alert(msg.join('\n'));
   } catch (e) {
     ui.alert('오류: ' + e.message);
@@ -1385,7 +1402,7 @@ function ceMenuRenderCalendar() {
       var now = new Date();
       current = { year: now.getFullYear(), month: now.getMonth() + 1 };
     }
-    var res = ui.prompt('달력 다시 그리기',
+    var res = ui.prompt('달력 불러오기',
       '어느 달을 보시겠습니까?  (예: ' + ceFormatYearMonth(current.year, current.month) + ')\n\n' +
       '달력 탭의 연월 칸(B1)에서 골라도 됩니다.\n' +
       '※ 날짜만 새로 나오고 이름 칸은 비워집니다.',
@@ -1410,7 +1427,7 @@ function ceMenuGenerate() {
   var shown = ceCalendarYearMonth();
   if (shown) suggested = ceFormatYearMonth(shown.year, shown.month);
 
-  var res = ui.prompt('배정하기',
+  var res = ui.prompt('새벽설교 배정표 만들기',
     '어느 달을 배정할까요?\n\n비워 두고 [확인] 을 누르면 ' + suggested + ' 로 배정합니다.',
     ui.ButtonSet.OK_CANCEL);
   if (res.getSelectedButton() !== ui.Button.OK) return;

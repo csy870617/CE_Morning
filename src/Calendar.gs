@@ -63,16 +63,30 @@ function ceFormatYearMonth(year, month) {
   return year + '-' + (month < 10 ? '0' + month : month);
 }
 
-/** B1 드롭다운에 넣을 연월 목록. 오늘이 낀 달을 가운데 두고 앞뒤로 벌립니다. */
+/** B1 드롭다운에 넣을 연월 목록. 오늘 기준 앞뒤 12개월씩. */
 function ceMonthChoices() {
   var now = new Date();
-  var d = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 6, 1));
   var list = [];
-  for (var i = 0; i < 25; i++) {
+  for (var i = -12; i <= 12; i++) {
+    var d = new Date(Date.UTC(now.getFullYear(), now.getMonth() + i, 1));
     list.push(ceFormatYearMonth(d.getUTCFullYear(), d.getUTCMonth() + 1));
-    d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
   }
   return list;
+}
+
+/**
+ * 연월 칸(B1)에 달 고르는 목록을 붙입니다.
+ * 달력을 다시 그리지 않아도 목록이 살아 있도록, 시트를 열 때마다 한 번 걸어 둡니다.
+ */
+function ceEnsureCalendarDropdown() {
+  var sh = ceSheet(CE_TAB.CALENDAR, false);
+  if (!sh) return false;
+  sh.getRange(CE_CAL.YM_ROW, CE_CAL.YM_COL).setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireValueInList(ceMonthChoices(), true)
+      .setAllowInvalid(true)
+      .build());
+  return true;
 }
 
 /** 이름 칸 한 줄을 [{name, role}] 로 풉니다. */
@@ -145,13 +159,9 @@ function ceRenderCalendar(year, month) {
 
   var ymCell = sh.getRange(CE_CAL.YM_ROW, CE_CAL.YM_COL);
   ymCell.setNumberFormat('@');
-  ymCell.setDataValidation(
-    SpreadsheetApp.newDataValidation()
-      .requireValueInList(ceMonthChoices(), true)
-      .setAllowInvalid(true)
-      .build());
   ymCell.setValue(ceFormatYearMonth(year, month))
     .setFontWeight('bold').setBackground('#fff2cc').setHorizontalAlignment('center');
+  ceEnsureCalendarDropdown();
 
   sh.getRange(CE_CAL.YM_ROW, 3, 1, 5).merge()
     .setValue('◀ 이 칸을 눌러 달을 고르세요. 고르는 즉시 그 달 달력이 그려집니다 (이름 칸은 비워집니다).')
