@@ -443,19 +443,29 @@ test('같은 달을 다시 돌리면 그 달 기록만 갈아 끼운다', () => 
   void ss;
 });
 
-test('대타로 세운 자리가 기록과 알림에 남는다', () => {
-  // 설교 명단과 방송 명단이 한 사람으로 겹쳐 매일 충돌 -> 맞바꿀 상대가 없어 대타
+test('맞바꾼 자리가 기록과 알림에 남는다', () => {
+  // 설교 명단과 방송 명단에 같은 사람이 있어 겹침이 생기는 구성
   const { ctx, ss } = prepared({
-    '설교': ['김목사'], '방송': ['김목사', '정집사']
+    '설교': ['김목사', '이목사'], '방송': ['김목사', '정집사', '한집사']
   });
   const out = ctx.ceGenerateMonth(2026, 9);
-  assert.ok(out.substitutes.length > 0, '대타 안내가 있어야 한다');
-  assert.ok(out.substitutes[0].indexOf('다음 순서자') >= 0, out.substitutes[0]);
+  assert.ok(out.swaps.length > 0, '교대 안내가 있어야 한다');
 
-  const subs = ctx.ceReadLog().filter(r => String(r[4]).indexOf('대타') === 0);
-  assert.ok(subs.length > 0, '기록에 대타 줄이 있어야 한다');
-  assert.strictEqual(String(subs[0][2]), '방송실');
+  const swapRows = ctx.ceReadLog().filter(r => String(r[4]).indexOf('교대') === 0);
+  assert.ok(swapRows.length > 0, '기록에 교대 줄이 있어야 한다');
+  assert.strictEqual(String(swapRows[0][2]), '방송실');
+  assert.ok(String(swapRows[0][4]).indexOf('맞바꿈') >= 0, swapRows[0][4]);
   void ss;
+});
+
+test('기록에 대타 줄은 생기지 않는다', () => {
+  const { ctx } = prepared({ '설교': ['김목사'], '방송': ['김목사', '정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  const log = ctx.ceReadLog();
+  assert.ok(log.every(r => String(r[4]).indexOf('대타') < 0), '대타 줄이 있으면 안 된다');
+  // 사람을 데려오는 대신 그대로 두고 확인 필요로 남긴다
+  const flagged = log.filter(r => String(r[4]).indexOf('확인 필요') === 0);
+  assert.ok(flagged.length > 0, '바꿀 상대가 없는 날은 확인 필요로 남아야 한다');
 });
 
 test('기록에는 그 달 날짜만 들어간다 (앞뒤 달 칸 제외)', () => {

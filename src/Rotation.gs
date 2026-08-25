@@ -159,7 +159,7 @@ function cePickNext(list, ptr, iso, role, exceptions) {
  * 같은 날 설교자와 방송실이 같은 사람이면 방송실을 다음날과 맞바꿉니다.
  * 맞바꾼 결과가 또 겹치거나 휴가와 부딪히면 그 다음날로 밀어서 찾습니다.
  */
-function ceResolveConflicts(days, exceptions, rotations) {
+function ceResolveConflicts(days, exceptions) {
   for (var i = 0; i < days.length; i++) {
     var a = days[i];
     if (!a.preacher || !a.broadcast) continue;
@@ -184,38 +184,9 @@ function ceResolveConflicts(days, exceptions, rotations) {
       done = true;
       break;
     }
-    if (done) continue;
-
-    // 맞바꿀 상대가 없으면 같은 명단의 다음 순서자를 대타로 세웁니다.
-    var list = (rotations && rotations[a.bcGroup]) || [];
-    var sub = ceNextSubstitute(list, a.broadcast, [a.preacher], a.iso, CE_ROLE.BROADCAST, exceptions);
-    if (sub) {
-      a.broadcast = sub;
-      a.substitute = true;
-      a.swapNote = '설교자와 겹쳐 다음 순서자로 대신 세움';
-    } else {
-      a.warning = '설교자와 방송실이 겹치는데 바꿀 상대도 대타도 찾지 못했습니다';
-    }
+    if (!done) a.warning = '설교자와 방송실이 겹치는데 같은 명단 안에서 바꿀 상대를 찾지 못했습니다';
   }
   return days;
-}
-
-/**
- * 맞바꿀 상대를 못 찾았을 때, 그 명단에서 다음 순서자를 대타로 데려옵니다.
- * 지금 사람 다음 자리부터 한 바퀴 돌며 그날 설 수 있는 첫 사람을 찾습니다.
- */
-function ceNextSubstitute(list, current, avoidNames, iso, role, exceptions) {
-  if (!list || !list.length) return '';
-  var start = list.indexOf(current);
-  var avoid = avoidNames || [];
-  for (var k = 1; k <= list.length; k++) {
-    var name = list[(start + k + list.length) % list.length];
-    if (!name || name === current) continue;
-    if (avoid.indexOf(name) >= 0) continue;
-    if (!ceIsAvailable(name, iso, role, exceptions)) continue;
-    return name;
-  }
-  return '';
 }
 
 /** 그날 새벽예배 설교자나 방송실로 이미 서는 사람인지. */
@@ -229,7 +200,7 @@ function ceClashesWithDawn(name, dawn) {
  * (이 담당은 일주일에 한 번뿐이라 '다음 순번' 이 곧 다음 주입니다.)
  * 맞바꾼 결과가 또 겹치거나 상대가 그날 예외면 그 다음 주로 밀어서 찾습니다.
  */
-function ceResolveSpecialConflicts(days, field, role, dawnByIso, exceptions, label, list) {
+function ceResolveSpecialConflicts(days, field, role, dawnByIso, exceptions, label) {
   for (var i = 0; i < days.length; i++) {
     var a = days[i];
     if (!a[field]) continue;
@@ -252,17 +223,7 @@ function ceResolveSpecialConflicts(days, field, role, dawnByIso, exceptions, lab
       done = true;
       break;
     }
-    if (done) continue;
-
-    var dawn = dawnByIso[a.iso] || {};
-    var sub = ceNextSubstitute(list, a[field], [dawn.preacher, dawn.broadcast], a.iso, role, exceptions);
-    if (sub) {
-      a[field] = sub;
-      a.substitute = true;
-      a.swapNote = '설교자·방송실과 겹쳐 다음 순서자로 대신 세움';
-    } else {
-      a.warning = label + ' 담당이 그날 설교자·방송실과 겹치는데 바꿀 상대도 대타도 찾지 못했습니다';
-    }
+    if (!done) a.warning = label + ' 담당이 그날 설교자·방송실과 겹치는데 바꿀 상대를 찾지 못했습니다';
   }
   return days;
 }
@@ -362,13 +323,13 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     }
   }
 
-  ceResolveConflicts(dawnDays, ex, rot);
+  ceResolveConflicts(dawnDays, ex);
 
   // 설교·방송이 확정된 뒤에 수요현관·토요찬양의 겹침을 풉니다.
   var dawnByIso = {};
   for (var k = 0; k < dawnDays.length; k++) dawnByIso[dawnDays[k].iso] = dawnDays[k];
-  ceResolveSpecialConflicts(doorDays, 'door', CE_ROLE.DOOR, dawnByIso, ex, '수요현관', rot.door || []);
-  ceResolveSpecialConflicts(praiseDays, 'praise', CE_ROLE.PRAISE, dawnByIso, ex, '토요찬양', rot.praise || []);
+  ceResolveSpecialConflicts(doorDays, 'door', CE_ROLE.DOOR, dawnByIso, ex, '수요현관');
+  ceResolveSpecialConflicts(praiseDays, 'praise', CE_ROLE.PRAISE, dawnByIso, ex, '토요찬양');
 
   var byIso = {};
   function slot(iso) {
@@ -378,8 +339,7 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
         offSermon: false, offBroadcast: false, offDoor: false, offPraise: false,
         gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false,
         swapNote: '', warning: '',
-        specialSwapNote: '', specialWarning: '',
-        substitute: false, specialSubstitute: false
+        specialSwapNote: '', specialWarning: ''
       };
     }
     return byIso[iso];
@@ -397,7 +357,6 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     cell.gapBroadcast = !!day.gapBroadcast;
     cell.swapNote = day.swapNote || '';
     cell.warning = day.warning || '';
-    cell.substitute = !!day.substitute;
   }
   for (i = 0; i < doorDays.length; i++) {
     var wd = doorDays[i];
@@ -407,7 +366,6 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     dc.gapDoor = !!wd.gapDoor;
     dc.specialSwapNote = wd.swapNote || '';
     dc.specialWarning = wd.warning || '';
-    dc.specialSubstitute = !!wd.substitute;
   }
   for (i = 0; i < praiseDays.length; i++) {
     var pd = praiseDays[i];
@@ -417,7 +375,6 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     pc.gapPraise = !!pd.gapPraise;
     if (pd.swapNote) pc.specialSwapNote = pd.swapNote;
     if (pd.warning) pc.specialWarning = pd.warning;
-    if (pd.substitute) pc.specialSubstitute = true;
   }
 
   return { byIso: byIso, dawnDays: dawnDays, doorDays: doorDays, praiseDays: praiseDays };
@@ -476,7 +433,6 @@ if (typeof module !== 'undefined') {
     ceResolveConflicts: ceResolveConflicts,
     ceResolveSpecialConflicts: ceResolveSpecialConflicts,
     ceClashesWithDawn: ceClashesWithDawn,
-    ceNextSubstitute: ceNextSubstitute,
     ceBuildSchedule: ceBuildSchedule,
     ceMonthGrid: ceMonthGrid
   };

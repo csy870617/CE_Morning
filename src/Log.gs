@@ -4,18 +4,17 @@
  * 배정을 돌릴 때마다 그 달의 결과를 쌓아 둡니다. 이미 있는 달은 새로 갈아 끼우고
  * 다른 달의 기록은 그대로 두므로, 달을 거듭할수록 기록이 누적됩니다.
  *
- * 특히 '교대' 와 '대타' 를 남깁니다. 겹침 때문에 순서를 벗어나 세운 사람이
- * 누구였는지 나중에 확인하기 위한 것입니다.
+ * 특히 '교대' 를 남깁니다. 겹침 때문에 순서를 벗어나 선 자리가 어디였는지
+ * 나중에 확인하기 위한 것입니다.
  */
 
 var CE_LOG_HEADERS = ['날짜', '요일', '역할', '담당', '비고', '기록시각'];
 
 /** 한 줄의 비고를 만듭니다. */
-function ceLogNote(off, gap, swapNote, warning, substitute) {
+function ceLogNote(off, gap, swapNote, warning) {
   if (off) return '휴일';
   if (gap) return '미배정 (전원 예외)';
   if (warning) return '확인 필요: ' + warning;
-  if (substitute) return '대타 — ' + swapNote;
   if (swapNote) return '교대 — ' + swapNote;
   return '';
 }
@@ -35,15 +34,15 @@ function ceLogRowsForMonth(year, month, grid, sched, cfg, stamp) {
 
       if (a.preacher || a.offSermon || a.gapSermon) {
         rows.push([cell.iso, dowName, '설교자', a.preacher || '',
-          ceLogNote(a.offSermon, a.gapSermon, '', '', false), stamp]);
+          ceLogNote(a.offSermon, a.gapSermon, '', ''), stamp]);
       }
       if (a.broadcast || a.offBroadcast || a.gapBroadcast) {
         rows.push([cell.iso, dowName, '방송실', a.broadcast || '',
-          ceLogNote(a.offBroadcast, a.gapBroadcast, a.swapNote, a.warning, a.substitute), stamp]);
+          ceLogNote(a.offBroadcast, a.gapBroadcast, a.swapNote, a.warning), stamp]);
       }
       if (special.label && (special.name || special.off || special.gap)) {
         rows.push([cell.iso, dowName, special.label, special.name || '',
-          ceLogNote(special.off, special.gap, special.swapNote, special.warning, a.specialSubstitute), stamp]);
+          ceLogNote(special.off, special.gap, special.swapNote, special.warning), stamp]);
       }
     }
   }
@@ -74,7 +73,7 @@ function ceReadLog() {
 
 /**
  * 그 달의 기록만 갈아 끼우고 나머지는 그대로 둡니다.
- * 반환값은 이번에 새로 생긴 '대타' 줄들입니다.
+ * 반환값은 이번 달에 생긴 '교대' 줄들입니다.
  */
 function ceAppendLog(year, month, grid, sched, cfg) {
   var prefix = ceFormatYearMonth(year, month);
@@ -95,7 +94,7 @@ function ceAppendLog(year, month, grid, sched, cfg) {
   if (all.length) sh.getRange(2, 1, all.length, CE_LOG_HEADERS.length).setValues(all);
   sh.hideSheet();
 
-  return fresh.filter(function (r) { return String(r[4]).indexOf('대타') === 0; });
+  return fresh.filter(function (r) { return String(r[4]).indexOf('교대') === 0; });
 }
 
 /** 기록 탭을 펼쳐 보여 줍니다. */

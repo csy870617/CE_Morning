@@ -64,16 +64,14 @@ function ceGenerateMonth(year, month) {
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
 
   var sheetName = ceMonthSheetName(year, month);
-  var substitutes = ceAppendLog(year, month, grid, sched, cfg);
+  var swaps = ceAppendLog(year, month, grid, sched, cfg);
   ceOrderTabs(sheetName);
 
   return {
     sheetName: sheetName,
     warnings: ceCollectWarnings(grid, sched, cfg),
     notes: ceFallbackNotes(rot, cfg),
-    substitutes: substitutes.map(function (r) {
-      return r[0] + ' ' + r[2] + ' : ' + r[3] + ' (다음 순서자)';
-    })
+    swaps: swaps.map(function (r) { return r[0] + ' ' + r[2] + ' : ' + r[3]; })
   };
 }
 
@@ -244,14 +242,12 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
 
       if (info.swapNote) {
         sh.getRange(base + 2, col).setNote('설교자와 겹쳐서 ' + info.swapNote);
-        if (info.substitute) sh.getRange(base + 2, col).setBackground(CE_COLOR.SUB_BG);
       }
       if (info.warning) {
         sh.getRange(base + 2, col).setBackground(CE_COLOR.WARN_BG).setNote(info.warning);
       }
       if (special.swapNote) {
         sh.getRange(base + 3, col).setNote('설교자·방송실과 겹쳐서 ' + special.swapNote);
-        if (info.specialSubstitute) sh.getRange(base + 3, col).setBackground(CE_COLOR.SUB_BG);
       }
       if (special.warning) {
         sh.getRange(base + 3, col).setBackground(CE_COLOR.WARN_BG).setNote(special.warning);

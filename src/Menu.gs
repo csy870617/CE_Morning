@@ -82,10 +82,10 @@ function ceRunGenerate(year, month) {
     if (sh) ceSS().setActiveSheet(sh);
 
     var msg = ['[' + out.sheetName + '] 배정을 마쳤습니다.'];
-    if (out.substitutes.length) {
+    if (out.swaps.length) {
       msg.push('');
-      msg.push('겹침 때문에 다음 순서자를 대신 세운 자리 (연두색):');
-      msg.push(out.substitutes.join('\n'));
+      msg.push('겹침 때문에 맞바꾼 자리 ' + out.swaps.length + '곳 (칸에 메모가 붙어 있습니다):');
+      msg.push(out.swaps.join('\n'));
     }
     if (out.notes.length) {
       msg.push('');
