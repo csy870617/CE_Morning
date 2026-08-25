@@ -1496,7 +1496,7 @@ function onEdit(e) {
   }
   try {
     ceRenderCalendar(ym.year, ym.month);
-    ss.toast(ceFormatYearMonth(ym.year, ym.month) + ' 달력을 그렸습니다. 이름 칸은 비어 있습니다.', '달력', 5);
+    ss.toast(ceFormatYearMonth(ym.year, ym.month) + ' 달력을 불러왔습니다.', '달력', 5);
   } catch (err) {
     ss.toast('달력을 그리지 못했습니다: ' + err.message, '달력', 8);
   }
