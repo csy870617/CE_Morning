@@ -5,7 +5,8 @@
 var CE_TAB = {
   SETTINGS: '설정',
   ROTATION: '로테이션',
-  CALENDAR: '달력(예외자)'
+  CALENDAR: '달력(예외자)',
+  STORE: '_달력저장'
 };
 
 /** 예전에 쓰던 탭 이름. 열어 보고 있으면 새 이름으로 바꿔 줍니다. */
@@ -245,7 +246,70 @@ function ceReadRotations() {
 /* 예외 - 달력 탭에 적어 둔 휴가·휴일                                   */
 /* ------------------------------------------------------------------ */
 
-/** 예외(휴가·휴일)는 전부 달력 탭에 적힌 그대로입니다. */
+function ceRoleLabel(role) {
+  if (role === CE_ROLE.SERMON) return '설교';
+  if (role === CE_ROLE.BROADCAST) return '방송';
+  if (role === CE_ROLE.DOOR) return '수요현관';
+  if (role === CE_ROLE.PRAISE) return '토요찬양';
+  return '전체';
+}
+
+/* ------------------------------------------------------------------ */
+/* 달력 저장소 (_달력저장 숨김 탭)                                      */
+/*                                                                     */
+/* 달력은 한 번에 한 달만 보여 주므로, 달을 옮길 때 지금 화면 내용을     */
+/* 여기에 넣어 두고 새 달 내용을 꺼내 옵니다.                           */
+/* ------------------------------------------------------------------ */
+
+var CE_STORE = { SHOWN_LABEL_COL: 5, SHOWN_VALUE_COL: 6 };
+
+function ceStoreSheet() {
+  var sh = ceSheet(CE_TAB.STORE, true);
+  if (String(sh.getRange(1, 1).getValue()).trim() !== '날짜') {
+    sh.getRange(1, 1, 1, 3).setValues([['날짜', '이름', '역할']]).setFontWeight('bold');
+    sh.getRange(1, CE_STORE.SHOWN_LABEL_COL).setValue('표시중인달').setFontWeight('bold');
+  }
+  sh.hideSheet();
+  return sh;
+}
+
+/** 달력이 지금 어느 달을 그려 놓고 있는지 (B1 값이 아니라, 마지막으로 그린 달) */
+function ceStoreGetShownMonth() {
+  var sh = ceSheet(CE_TAB.STORE, false);
+  if (!sh) return null;
+  return ceParseYearMonth(sh.getRange(1, CE_STORE.SHOWN_VALUE_COL).getValue());
+}
+
+function ceStoreSetShownMonth(year, month) {
+  var sh = ceStoreSheet();
+  sh.getRange(1, CE_STORE.SHOWN_VALUE_COL).setNumberFormat('@').setValue(ceFormatYearMonth(year, month));
+}
+
+function ceReadStoredExceptions() {
+  var sh = ceSheet(CE_TAB.STORE, false);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues();
+  var out = [];
+  for (var i = 0; i < values.length; i++) {
+    var iso = ceCellToIso(values[i][0]);
+    var name = String(values[i][1] == null ? '' : values[i][1]).trim();
+    if (!iso || !name) continue;
+    out.push({ name: name, start: iso, end: iso, role: ceNormalizeRole(values[i][2]) });
+  }
+  return out;
+}
+
+function ceWriteStoredExceptions(entries) {
+  var sh = ceStoreSheet();
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 3).clearContent();
+  if (!entries.length) return;
+
+  var rows = entries.map(function (e) { return [e.start, e.name, ceRoleLabel(e.role)]; });
+  rows.sort(function (a, b) { return a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0); });
+  sh.getRange(2, 1, rows.length, 3).setValues(rows);
+}
+
+/** 예외(휴가·휴일)는 달마다 저장해 둔 것을 전부 모아 씁니다. */
 function ceReadAllExceptions() {
-  return ceReadCalendarExceptions();
+  return ceReadStoredExceptions();
 }

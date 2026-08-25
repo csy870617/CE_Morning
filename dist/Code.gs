@@ -408,7 +408,8 @@ if (typeof module !== 'undefined') {
 var CE_TAB = {
   SETTINGS: '설정',
   ROTATION: '로테이션',
-  CALENDAR: '달력(예외자)'
+  CALENDAR: '달력(예외자)',
+  STORE: '_달력저장'
 };
 
 /** 예전에 쓰던 탭 이름. 열어 보고 있으면 새 이름으로 바꿔 줍니다. */
@@ -648,9 +649,72 @@ function ceReadRotations() {
 /* 예외 - 달력 탭에 적어 둔 휴가·휴일                                   */
 /* ------------------------------------------------------------------ */
 
-/** 예외(휴가·휴일)는 전부 달력 탭에 적힌 그대로입니다. */
+function ceRoleLabel(role) {
+  if (role === CE_ROLE.SERMON) return '설교';
+  if (role === CE_ROLE.BROADCAST) return '방송';
+  if (role === CE_ROLE.DOOR) return '수요현관';
+  if (role === CE_ROLE.PRAISE) return '토요찬양';
+  return '전체';
+}
+
+/* ------------------------------------------------------------------ */
+/* 달력 저장소 (_달력저장 숨김 탭)                                      */
+/*                                                                     */
+/* 달력은 한 번에 한 달만 보여 주므로, 달을 옮길 때 지금 화면 내용을     */
+/* 여기에 넣어 두고 새 달 내용을 꺼내 옵니다.                           */
+/* ------------------------------------------------------------------ */
+
+var CE_STORE = { SHOWN_LABEL_COL: 5, SHOWN_VALUE_COL: 6 };
+
+function ceStoreSheet() {
+  var sh = ceSheet(CE_TAB.STORE, true);
+  if (String(sh.getRange(1, 1).getValue()).trim() !== '날짜') {
+    sh.getRange(1, 1, 1, 3).setValues([['날짜', '이름', '역할']]).setFontWeight('bold');
+    sh.getRange(1, CE_STORE.SHOWN_LABEL_COL).setValue('표시중인달').setFontWeight('bold');
+  }
+  sh.hideSheet();
+  return sh;
+}
+
+/** 달력이 지금 어느 달을 그려 놓고 있는지 (B1 값이 아니라, 마지막으로 그린 달) */
+function ceStoreGetShownMonth() {
+  var sh = ceSheet(CE_TAB.STORE, false);
+  if (!sh) return null;
+  return ceParseYearMonth(sh.getRange(1, CE_STORE.SHOWN_VALUE_COL).getValue());
+}
+
+function ceStoreSetShownMonth(year, month) {
+  var sh = ceStoreSheet();
+  sh.getRange(1, CE_STORE.SHOWN_VALUE_COL).setNumberFormat('@').setValue(ceFormatYearMonth(year, month));
+}
+
+function ceReadStoredExceptions() {
+  var sh = ceSheet(CE_TAB.STORE, false);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var values = sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues();
+  var out = [];
+  for (var i = 0; i < values.length; i++) {
+    var iso = ceCellToIso(values[i][0]);
+    var name = String(values[i][1] == null ? '' : values[i][1]).trim();
+    if (!iso || !name) continue;
+    out.push({ name: name, start: iso, end: iso, role: ceNormalizeRole(values[i][2]) });
+  }
+  return out;
+}
+
+function ceWriteStoredExceptions(entries) {
+  var sh = ceStoreSheet();
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 3).clearContent();
+  if (!entries.length) return;
+
+  var rows = entries.map(function (e) { return [e.start, e.name, ceRoleLabel(e.role)]; });
+  rows.sort(function (a, b) { return a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0); });
+  sh.getRange(2, 1, rows.length, 3).setValues(rows);
+}
+
+/** 예외(휴가·휴일)는 달마다 저장해 둔 것을 전부 모아 씁니다. */
 function ceReadAllExceptions() {
-  return ceReadCalendarExceptions();
+  return ceReadStoredExceptions();
 }
 
 /* ===== Calendar.gs ===== */
@@ -658,8 +722,8 @@ function ceReadAllExceptions() {
 /**
  * "달력(예외자)" 탭 - 한 달치 달력에 그날 빠지는 사람 이름을 적어 두는 곳.
  *
- * 여기 적힌 내용이 곧 예외 목록입니다. 따로 저장해 두는 곳은 없습니다.
- * 달을 바꿔 다시 그리면 날짜만 새로 나오고 이름 칸은 비워집니다.
+ * 화면에는 한 달만 보이지만, 달을 옮길 때 지금 내용을 숨김 탭(_달력저장)에 넣어 두고
+ * 새 달에 적어 둔 내용을 꺼내 옵니다. 적은 적 없는 달은 이름 칸이 비어 있습니다.
  *
  * 이름 칸 적는 법:  홍길동, 김집사(방송)
  *   - 그냥 이름만 쓰면 그날 전부(설교/방송/수요현관)에서 빠집니다.
@@ -720,14 +784,21 @@ function ceFormatYearMonth(year, month) {
   return year + '-' + (month < 10 ? '0' + month : month);
 }
 
-/** B1 드롭다운에 넣을 연월 목록. 오늘 기준 앞뒤 12개월씩. */
+/**
+ * B1 드롭다운에 넣을 연월 목록.
+ * 맨 위가 이번 달, 그 다음이 다음 달들(+6), 그 뒤가 지난 달들(-6) 입니다.
+ * 자주 고르는 달이 위쪽에 오도록 한 것입니다.
+ */
 function ceMonthChoices() {
   var now = new Date();
-  var list = [];
-  for (var i = -12; i <= 12; i++) {
-    var d = new Date(Date.UTC(now.getFullYear(), now.getMonth() + i, 1));
-    list.push(ceFormatYearMonth(d.getUTCFullYear(), d.getUTCMonth() + 1));
+  function at(offset) {
+    var d = new Date(Date.UTC(now.getFullYear(), now.getMonth() + offset, 1));
+    return ceFormatYearMonth(d.getUTCFullYear(), d.getUTCMonth() + 1);
   }
+  var list = [at(0)];
+  var i;
+  for (i = 1; i <= 6; i++) list.push(at(i));
+  for (i = 1; i <= 6; i++) list.push(at(-i));
   return list;
 }
 
@@ -744,6 +815,13 @@ function ceEnsureCalendarDropdown() {
       .setAllowInvalid(true)
       .build());
   return true;
+}
+
+/** [{name, role}] 을 이름 칸 한 줄로 씁니다. */
+function ceFormatNameCell(entries) {
+  return entries.map(function (e) {
+    return e.role === CE_ROLE.ALL ? e.name : e.name + '(' + ceRoleLabel(e.role) + ')';
+  }).join(', ');
 }
 
 /** 이름 칸 한 줄을 [{name, role}] 로 풉니다. */
@@ -774,13 +852,13 @@ function ceCalendarYearMonth() {
 }
 
 /**
- * 지금 화면에 떠 있는 달력을 그대로 읽어 예외 목록을 만듭니다.
- * 이 탭에 적힌 것이 전부입니다.
+ * 화면에 그려져 있는 격자를 읽어 예외 목록을 만듭니다.
+ * ym 은 그 격자가 어느 달의 것인지입니다. (B1 값이 아니라 마지막으로 그린 달)
  */
-function ceReadCalendarExceptions() {
+function ceReadCalendarExceptions(ym) {
   var sh = ceSheet(CE_TAB.CALENDAR, false);
   if (!sh) return [];
-  var ym = ceCalendarYearMonth();
+  if (!ym) ym = ceStoreGetShownMonth() || ceCalendarYearMonth();
   if (!ym) return [];
 
   var weeks = ceCalendarWeeks(ym.year, ym.month);
@@ -801,12 +879,43 @@ function ceReadCalendarExceptions() {
 }
 
 /**
+ * 지금 그려져 있는 달의 내용을 저장소에 넣습니다.
+ * 그 달의 기존 기록은 갈아 끼우고, 다른 달은 그대로 둡니다.
+ */
+function ceSaveCalendar() {
+  var shown = ceStoreGetShownMonth();
+  if (!shown) return 0;
+
+  var fresh = ceReadCalendarExceptions(shown);
+  var weeks = ceCalendarWeeks(shown.year, shown.month);
+  var mine = {};
+  for (var w = 0; w < weeks.length; w++) {
+    for (var c = 0; c < CE_CAL.COLS; c++) {
+      if (weeks[w][c].inMonth) mine[weeks[w][c].iso] = true;
+    }
+  }
+
+  var kept = ceReadStoredExceptions().filter(function (e) { return !mine[e.start]; });
+  ceWriteStoredExceptions(kept.concat(fresh));
+  return fresh.length;
+}
+
+/**
  * 달력을 해당 연월로 다시 그립니다.
  * 날짜만 새로 채우고 이름 칸은 비워 둡니다. 이전에 적어 둔 내용은 남지 않습니다.
  */
 function ceRenderCalendar(year, month) {
+  ceSaveCalendar();               // 보고 있던 달의 내용을 먼저 넣어 둡니다
+
   var sh = ceSheet(CE_TAB.CALENDAR, true);
   var weeks = ceCalendarWeeks(year, month);
+
+  var byIso = {};
+  var stored = ceReadStoredExceptions();
+  for (var si = 0; si < stored.length; si++) {
+    if (!byIso[stored[si].start]) byIso[stored[si].start] = [];
+    byIso[stored[si].start].push({ name: stored[si].name, role: stored[si].role });
+  }
   sh.clear();
   sh.clearNotes();
   // 달마다 주 수가 5주/6주로 달라지므로 지난번 병합을 먼저 풉니다.
@@ -821,7 +930,7 @@ function ceRenderCalendar(year, month) {
   ceEnsureCalendarDropdown();
 
   sh.getRange(CE_CAL.YM_ROW, 3, 1, 5).merge()
-    .setValue('◀ 이 칸을 눌러 달을 고르세요. 고르는 즉시 그 달 달력이 그려집니다 (이름 칸은 비워집니다).')
+    .setValue('◀ 이 칸을 눌러 달을 고르세요. 고르는 즉시 그 달 달력이 나옵니다. 적어 두신 내용은 달마다 남습니다.')
     .setFontColor('#666666');
 
   sh.setRowHeight(2, 34);
@@ -844,7 +953,7 @@ function ceRenderCalendar(year, month) {
     for (var c = 0; c < CE_CAL.COLS; c++) {
       var cell = weeks[w][c];
       dates.push(cell.inMonth ? cell.day : '');
-      names.push('');
+      names.push(cell.inMonth ? ceFormatNameCell(byIso[cell.iso] || []) : '');
       colors.push(cell.inMonth ? null : CE_COLOR.BAND_BG);
     }
     sh.getRange(dateRow, 1, 1, CE_CAL.COLS).setValues([dates])
@@ -863,6 +972,7 @@ function ceRenderCalendar(year, month) {
     .setBorder(true, true, true, true, true, true, CE_COLOR.BORDER, SpreadsheetApp.BorderStyle.SOLID);
   for (var col = 1; col <= CE_CAL.COLS; col++) sh.setColumnWidth(col, 120);
   sh.setFrozenRows(CE_CAL.HEAD_ROW);
+  ceStoreSetShownMonth(year, month);
   return sh;
 }
 
@@ -912,6 +1022,7 @@ function ceMonthSheetName(year, month) {
  */
 function ceGenerateMonth(year, month) {
   ceRenameLegacyTabs();           // 예전 이름의 탭이 있으면 먼저 바꿔 둡니다
+  ceSaveCalendar();               // 달력에 적어만 두고 아직 안 넘긴 내용까지 반영
 
   var cfg = ceReadConfig();
   var rot = ceReadRotations();
@@ -933,7 +1044,7 @@ function ceGenerateMonth(year, month) {
   return {
     sheetName: sheetName,
     warnings: ceCollectWarnings(grid, sched, cfg),
-    notes: ceFallbackNotes(rot, cfg, year, month)
+    notes: ceFallbackNotes(rot, cfg)
   };
 }
 
@@ -941,20 +1052,10 @@ function ceGenerateMonth(year, month) {
  * 명단이 왜 안 쓰이고 있는지 알려 줍니다.
  * 열 자체를 못 찾은 것과, 열은 있는데 이름이 안 적힌 것을 구분합니다.
  */
-function ceFallbackNotes(rot, cfg, year, month) {
+function ceFallbackNotes(rot, cfg) {
   var cols = rot._columns || {};
   var notes = [];
 
-  // 예외는 지금 달력에 떠 있는 달에서만 읽습니다. 다른 달을 보고 있으면 알려 줍니다.
-  var shown = ceCalendarYearMonth();
-  var want = ceFormatYearMonth(year, month);
-  if (!shown) {
-    notes.push('[' + CE_TAB.CALENDAR + '] 탭이 비어 있어 예외를 하나도 반영하지 못했습니다.');
-  } else if (ceFormatYearMonth(shown.year, shown.month) !== want) {
-    notes.push('[' + CE_TAB.CALENDAR + '] 탭이 ' + ceFormatYearMonth(shown.year, shown.month) +
-      ' 을 보고 있습니다. ' + want + ' 의 예외는 반영되지 않았습니다. ' +
-      '달력을 ' + want + ' 로 다시 그린 뒤 예외를 적고 다시 배정해 주세요.');
-  }
 
   // 토요일이 새벽예배 요일에 없으면 토요일 칸은 아예 비어 있게 됩니다.
   var satMissing = [];
@@ -1336,7 +1437,6 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('새벽예배 배정')
     .addItem('새벽설교 배정표 만들기', 'ceMenuGenerate')
-    .addItem('달력 불러오기', 'ceMenuRenderCalendar')
     .addSeparator()
     .addItem('명단·예외 점검', 'ceMenuCheck')
     .addItem('초기 설정 만들기', 'ceMenuSetup')
@@ -1393,38 +1493,13 @@ function ceMenuSetup() {
   }
 }
 
-function ceMenuRenderCalendar() {
-  var ui = SpreadsheetApp.getUi();
-  try {
-    var sh = ceSheet(CE_TAB.CALENDAR, false);
-    var current = sh ? ceParseYearMonth(sh.getRange(CE_CAL.YM_ROW, CE_CAL.YM_COL).getValue()) : null;
-    if (!current) {
-      var now = new Date();
-      current = { year: now.getFullYear(), month: now.getMonth() + 1 };
-    }
-    var res = ui.prompt('달력 불러오기',
-      '어느 달을 보시겠습니까?  (예: ' + ceFormatYearMonth(current.year, current.month) + ')\n\n' +
-      '달력 탭의 연월 칸(B1)에서 골라도 됩니다.\n' +
-      '※ 날짜만 새로 나오고 이름 칸은 비워집니다.',
-      ui.ButtonSet.OK_CANCEL);
-    if (res.getSelectedButton() !== ui.Button.OK) return;
-    var ym = ceParseYearMonth(res.getResponseText());
-    if (!ym) { ui.alert('YYYY-MM 형식으로 적어 주세요. 예) 2026-09'); return; }
-
-    var out = ceRenderCalendar(ym.year, ym.month);
-    ceSS().setActiveSheet(out);
-  } catch (e) {
-    ui.alert('오류: ' + e.message);
-  }
-}
-
 function ceMenuGenerate() {
   var ui = SpreadsheetApp.getUi();
   var now = new Date();
   var suggested = ceFormatYearMonth(now.getFullYear(), now.getMonth() + 1);
 
-  // 달력이 어떤 달을 보고 있으면 그 달을 먼저 권합니다. 예외가 거기 적혀 있기 때문입니다.
-  var shown = ceCalendarYearMonth();
+  // 달력이 보고 있는 달을 먼저 권합니다.
+  var shown = ceStoreGetShownMonth() || ceCalendarYearMonth();
   if (shown) suggested = ceFormatYearMonth(shown.year, shown.month);
 
   var res = ui.prompt('새벽설교 배정표 만들기',
@@ -1464,6 +1539,7 @@ function ceRunGenerate(year, month) {
 function ceMenuCheck() {
   var ui = SpreadsheetApp.getUi();
   try {
+    ceSaveCalendar();               // 달력에 적어만 두고 아직 안 넘긴 내용까지 반영
     var cfg = ceReadConfig();
     var rot = ceReadRotations();
     var ex = ceReadAllExceptions();
@@ -1505,14 +1581,13 @@ function ceMenuCheck() {
     lines.push('');
     var holidayCount = 0;
     ex.forEach(function (e) { if (ceIsHolidayName(e.name)) holidayCount++; });
-    var shown = ceCalendarYearMonth();
+    var shown = ceStoreGetShownMonth();
     lines.push('달력이 보고 있는 달 : ' + (shown ? ceFormatYearMonth(shown.year, shown.month) : '(없음)'));
-    lines.push('그 달에 적힌 예외 ' + (ex.length - holidayCount) + '건, 휴일 ' + holidayCount + '건');
+    lines.push('저장된 예외 ' + (ex.length - holidayCount) + '건, 휴일 ' + holidayCount + '건 (모든 달 합계)');
 
     var stale = [];
     if (ceSS().getSheetByName('장기예외')) stale.push('장기예외');
     if (ceSS().getSheetByName('_기록')) stale.push('_기록');
-    if (ceSS().getSheetByName('_달력저장')) stale.push('_달력저장');
     if (stale.length) {
       lines.push('');
       lines.push('※ 이제 쓰지 않는 탭이 남아 있습니다: ' + stale.join(', '));

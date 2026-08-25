@@ -6,7 +6,6 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('새벽예배 배정')
     .addItem('새벽설교 배정표 만들기', 'ceMenuGenerate')
-    .addItem('달력 불러오기', 'ceMenuRenderCalendar')
     .addSeparator()
     .addItem('명단·예외 점검', 'ceMenuCheck')
     .addItem('초기 설정 만들기', 'ceMenuSetup')
@@ -63,38 +62,13 @@ function ceMenuSetup() {
   }
 }
 
-function ceMenuRenderCalendar() {
-  var ui = SpreadsheetApp.getUi();
-  try {
-    var sh = ceSheet(CE_TAB.CALENDAR, false);
-    var current = sh ? ceParseYearMonth(sh.getRange(CE_CAL.YM_ROW, CE_CAL.YM_COL).getValue()) : null;
-    if (!current) {
-      var now = new Date();
-      current = { year: now.getFullYear(), month: now.getMonth() + 1 };
-    }
-    var res = ui.prompt('달력 불러오기',
-      '어느 달을 보시겠습니까?  (예: ' + ceFormatYearMonth(current.year, current.month) + ')\n\n' +
-      '달력 탭의 연월 칸(B1)에서 골라도 됩니다.\n' +
-      '※ 날짜만 새로 나오고 이름 칸은 비워집니다.',
-      ui.ButtonSet.OK_CANCEL);
-    if (res.getSelectedButton() !== ui.Button.OK) return;
-    var ym = ceParseYearMonth(res.getResponseText());
-    if (!ym) { ui.alert('YYYY-MM 형식으로 적어 주세요. 예) 2026-09'); return; }
-
-    var out = ceRenderCalendar(ym.year, ym.month);
-    ceSS().setActiveSheet(out);
-  } catch (e) {
-    ui.alert('오류: ' + e.message);
-  }
-}
-
 function ceMenuGenerate() {
   var ui = SpreadsheetApp.getUi();
   var now = new Date();
   var suggested = ceFormatYearMonth(now.getFullYear(), now.getMonth() + 1);
 
-  // 달력이 어떤 달을 보고 있으면 그 달을 먼저 권합니다. 예외가 거기 적혀 있기 때문입니다.
-  var shown = ceCalendarYearMonth();
+  // 달력이 보고 있는 달을 먼저 권합니다.
+  var shown = ceStoreGetShownMonth() || ceCalendarYearMonth();
   if (shown) suggested = ceFormatYearMonth(shown.year, shown.month);
 
   var res = ui.prompt('새벽설교 배정표 만들기',
@@ -134,6 +108,7 @@ function ceRunGenerate(year, month) {
 function ceMenuCheck() {
   var ui = SpreadsheetApp.getUi();
   try {
+    ceSaveCalendar();               // 달력에 적어만 두고 아직 안 넘긴 내용까지 반영
     var cfg = ceReadConfig();
     var rot = ceReadRotations();
     var ex = ceReadAllExceptions();
@@ -175,14 +150,13 @@ function ceMenuCheck() {
     lines.push('');
     var holidayCount = 0;
     ex.forEach(function (e) { if (ceIsHolidayName(e.name)) holidayCount++; });
-    var shown = ceCalendarYearMonth();
+    var shown = ceStoreGetShownMonth();
     lines.push('달력이 보고 있는 달 : ' + (shown ? ceFormatYearMonth(shown.year, shown.month) : '(없음)'));
-    lines.push('그 달에 적힌 예외 ' + (ex.length - holidayCount) + '건, 휴일 ' + holidayCount + '건');
+    lines.push('저장된 예외 ' + (ex.length - holidayCount) + '건, 휴일 ' + holidayCount + '건 (모든 달 합계)');
 
     var stale = [];
     if (ceSS().getSheetByName('장기예외')) stale.push('장기예외');
     if (ceSS().getSheetByName('_기록')) stale.push('_기록');
-    if (ceSS().getSheetByName('_달력저장')) stale.push('_달력저장');
     if (stale.length) {
       lines.push('');
       lines.push('※ 이제 쓰지 않는 탭이 남아 있습니다: ' + stale.join(', '));

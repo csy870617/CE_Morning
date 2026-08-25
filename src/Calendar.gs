@@ -1,8 +1,8 @@
 /**
  * "달력(예외자)" 탭 - 한 달치 달력에 그날 빠지는 사람 이름을 적어 두는 곳.
  *
- * 여기 적힌 내용이 곧 예외 목록입니다. 따로 저장해 두는 곳은 없습니다.
- * 달을 바꿔 다시 그리면 날짜만 새로 나오고 이름 칸은 비워집니다.
+ * 화면에는 한 달만 보이지만, 달을 옮길 때 지금 내용을 숨김 탭(_달력저장)에 넣어 두고
+ * 새 달에 적어 둔 내용을 꺼내 옵니다. 적은 적 없는 달은 이름 칸이 비어 있습니다.
  *
  * 이름 칸 적는 법:  홍길동, 김집사(방송)
  *   - 그냥 이름만 쓰면 그날 전부(설교/방송/수요현관)에서 빠집니다.
@@ -63,14 +63,21 @@ function ceFormatYearMonth(year, month) {
   return year + '-' + (month < 10 ? '0' + month : month);
 }
 
-/** B1 드롭다운에 넣을 연월 목록. 오늘 기준 앞뒤 12개월씩. */
+/**
+ * B1 드롭다운에 넣을 연월 목록.
+ * 맨 위가 이번 달, 그 다음이 다음 달들(+6), 그 뒤가 지난 달들(-6) 입니다.
+ * 자주 고르는 달이 위쪽에 오도록 한 것입니다.
+ */
 function ceMonthChoices() {
   var now = new Date();
-  var list = [];
-  for (var i = -12; i <= 12; i++) {
-    var d = new Date(Date.UTC(now.getFullYear(), now.getMonth() + i, 1));
-    list.push(ceFormatYearMonth(d.getUTCFullYear(), d.getUTCMonth() + 1));
+  function at(offset) {
+    var d = new Date(Date.UTC(now.getFullYear(), now.getMonth() + offset, 1));
+    return ceFormatYearMonth(d.getUTCFullYear(), d.getUTCMonth() + 1);
   }
+  var list = [at(0)];
+  var i;
+  for (i = 1; i <= 6; i++) list.push(at(i));
+  for (i = 1; i <= 6; i++) list.push(at(-i));
   return list;
 }
 
@@ -87,6 +94,13 @@ function ceEnsureCalendarDropdown() {
       .setAllowInvalid(true)
       .build());
   return true;
+}
+
+/** [{name, role}] 을 이름 칸 한 줄로 씁니다. */
+function ceFormatNameCell(entries) {
+  return entries.map(function (e) {
+    return e.role === CE_ROLE.ALL ? e.name : e.name + '(' + ceRoleLabel(e.role) + ')';
+  }).join(', ');
 }
 
 /** 이름 칸 한 줄을 [{name, role}] 로 풉니다. */
@@ -117,13 +131,13 @@ function ceCalendarYearMonth() {
 }
 
 /**
- * 지금 화면에 떠 있는 달력을 그대로 읽어 예외 목록을 만듭니다.
- * 이 탭에 적힌 것이 전부입니다.
+ * 화면에 그려져 있는 격자를 읽어 예외 목록을 만듭니다.
+ * ym 은 그 격자가 어느 달의 것인지입니다. (B1 값이 아니라 마지막으로 그린 달)
  */
-function ceReadCalendarExceptions() {
+function ceReadCalendarExceptions(ym) {
   var sh = ceSheet(CE_TAB.CALENDAR, false);
   if (!sh) return [];
-  var ym = ceCalendarYearMonth();
+  if (!ym) ym = ceStoreGetShownMonth() || ceCalendarYearMonth();
   if (!ym) return [];
 
   var weeks = ceCalendarWeeks(ym.year, ym.month);
@@ -144,12 +158,43 @@ function ceReadCalendarExceptions() {
 }
 
 /**
+ * 지금 그려져 있는 달의 내용을 저장소에 넣습니다.
+ * 그 달의 기존 기록은 갈아 끼우고, 다른 달은 그대로 둡니다.
+ */
+function ceSaveCalendar() {
+  var shown = ceStoreGetShownMonth();
+  if (!shown) return 0;
+
+  var fresh = ceReadCalendarExceptions(shown);
+  var weeks = ceCalendarWeeks(shown.year, shown.month);
+  var mine = {};
+  for (var w = 0; w < weeks.length; w++) {
+    for (var c = 0; c < CE_CAL.COLS; c++) {
+      if (weeks[w][c].inMonth) mine[weeks[w][c].iso] = true;
+    }
+  }
+
+  var kept = ceReadStoredExceptions().filter(function (e) { return !mine[e.start]; });
+  ceWriteStoredExceptions(kept.concat(fresh));
+  return fresh.length;
+}
+
+/**
  * 달력을 해당 연월로 다시 그립니다.
  * 날짜만 새로 채우고 이름 칸은 비워 둡니다. 이전에 적어 둔 내용은 남지 않습니다.
  */
 function ceRenderCalendar(year, month) {
+  ceSaveCalendar();               // 보고 있던 달의 내용을 먼저 넣어 둡니다
+
   var sh = ceSheet(CE_TAB.CALENDAR, true);
   var weeks = ceCalendarWeeks(year, month);
+
+  var byIso = {};
+  var stored = ceReadStoredExceptions();
+  for (var si = 0; si < stored.length; si++) {
+    if (!byIso[stored[si].start]) byIso[stored[si].start] = [];
+    byIso[stored[si].start].push({ name: stored[si].name, role: stored[si].role });
+  }
   sh.clear();
   sh.clearNotes();
   // 달마다 주 수가 5주/6주로 달라지므로 지난번 병합을 먼저 풉니다.
@@ -164,7 +209,7 @@ function ceRenderCalendar(year, month) {
   ceEnsureCalendarDropdown();
 
   sh.getRange(CE_CAL.YM_ROW, 3, 1, 5).merge()
-    .setValue('◀ 이 칸을 눌러 달을 고르세요. 고르는 즉시 그 달 달력이 그려집니다 (이름 칸은 비워집니다).')
+    .setValue('◀ 이 칸을 눌러 달을 고르세요. 고르는 즉시 그 달 달력이 나옵니다. 적어 두신 내용은 달마다 남습니다.')
     .setFontColor('#666666');
 
   sh.setRowHeight(2, 34);
@@ -187,7 +232,7 @@ function ceRenderCalendar(year, month) {
     for (var c = 0; c < CE_CAL.COLS; c++) {
       var cell = weeks[w][c];
       dates.push(cell.inMonth ? cell.day : '');
-      names.push('');
+      names.push(cell.inMonth ? ceFormatNameCell(byIso[cell.iso] || []) : '');
       colors.push(cell.inMonth ? null : CE_COLOR.BAND_BG);
     }
     sh.getRange(dateRow, 1, 1, CE_CAL.COLS).setValues([dates])
@@ -206,5 +251,6 @@ function ceRenderCalendar(year, month) {
     .setBorder(true, true, true, true, true, true, CE_COLOR.BORDER, SpreadsheetApp.BorderStyle.SOLID);
   for (var col = 1; col <= CE_CAL.COLS; col++) sh.setColumnWidth(col, 120);
   sh.setFrozenRows(CE_CAL.HEAD_ROW);
+  ceStoreSetShownMonth(year, month);
   return sh;
 }

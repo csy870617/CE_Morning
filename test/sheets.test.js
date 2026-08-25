@@ -267,48 +267,75 @@ test("달력에 '휴일' 을 적으면 그 날 칸이 비고 순번이 유지된
   assert.strictEqual(sh.notes.get(`${4},${2 + 1}`), '휴일 — 직접 입력하세요');
 });
 
-test('달력을 다시 그리면 날짜만 나오고 이름 칸은 빈다', () => {
-  const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
-  ctx.ceRenderCalendar(2026, 9);
-
-  const cal = ss.getSheetByName('달력(예외자)');
-  let col = 0;
-  for (let c = 1; c <= 7; c++) if (String(cal._get(4, c)) === '1') col = c;
-  cal._set(5, col, '김목사');
-  assert.strictEqual(String(cal._get(5, col)), '김목사');
-
-  ctx.ceRenderCalendar(2026, 10);
-  // 10월 격자: 날짜는 나오고
-  let has = false;
-  for (let r = 4; r <= 16; r += 2) for (let c = 1; c <= 7; c++) if (String(cal._get(r, c)) === '1') has = true;
-  assert.ok(has, '날짜는 그려져야 한다');
-  // 이름 줄은 전부 비어 있어야 한다
-  for (let r = 5; r <= 17; r += 2) {
+/** 달력 격자에서 그 날짜가 들어 있는 이름 칸 좌표를 찾습니다. */
+function findDayCell(cal, day) {
+  for (let r = 4; r <= 20; r += 2) {
     for (let c = 1; c <= 7; c++) {
-      assert.strictEqual(String(cal._get(r, c)), '', `${r}행 ${c}열이 비어 있어야 한다`);
+      if (String(cal._get(r, c)) === String(day)) return { row: r + 1, col: c };
     }
   }
+  throw new Error(day + '일 칸을 찾지 못했습니다');
+}
 
-  ctx.ceRenderCalendar(2026, 9);   // 9월로 돌아와도 되살아나지 않는다
-  let back = 0;
-  for (let c = 1; c <= 7; c++) if (String(cal._get(4, c)) === '1') back = c;
-  assert.strictEqual(String(cal._get(5, back)), '');
-});
-
-test('달력 저장용 숨김 탭을 만들지 않는다', () => {
+test('달을 옮겼다 돌아오면 적어 둔 내용이 그대로 있다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
   ctx.ceRenderCalendar(2026, 9);
+  const cal = ss.getSheetByName('달력(예외자)');
+
+  const sep1 = findDayCell(cal, 1);
+  cal._set(sep1.row, sep1.col, '김목사');
+
   ctx.ceRenderCalendar(2026, 10);
-  ctx.ceGenerateMonth(2026, 10);
-  assert.strictEqual(ss.getSheetByName('_달력저장'), null);
-  assert.deepStrictEqual(plain(ss.sheets.filter(s => s.hidden).map(s => s.name)), []);
+  const oct1 = findDayCell(cal, 1);
+  assert.strictEqual(String(cal._get(oct1.row, oct1.col)), '', '적은 적 없는 달은 비어 있다');
+  cal._set(oct1.row, oct1.col, '정집사');
+
+  ctx.ceRenderCalendar(2026, 9);
+  const back = findDayCell(cal, 1);
+  assert.strictEqual(String(cal._get(back.row, back.col)), '김목사', '9월 내용이 돌아와야 한다');
+
+  ctx.ceRenderCalendar(2026, 10);
+  const back10 = findDayCell(cal, 1);
+  assert.strictEqual(String(cal._get(back10.row, back10.col)), '정집사', '10월 내용도 남아 있어야 한다');
 });
 
-test('달력이 다른 달을 보고 있으면 알려 준다', () => {
-  const { ctx } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+test('역할을 적은 것도 그대로 돌아온다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
+  ctx.ceRenderCalendar(2026, 9);
+  const cal = ss.getSheetByName('달력(예외자)');
+  const c1 = findDayCell(cal, 2);
+  cal._set(c1.row, c1.col, '김목사, 정집사(방송)');
+
   ctx.ceRenderCalendar(2026, 10);
-  const out = ctx.ceGenerateMonth(2026, 9);
-  assert.ok(out.notes.join('\n').indexOf('2026-10 을 보고 있습니다') >= 0, out.notes.join('\n'));
+  ctx.ceRenderCalendar(2026, 9);
+  const back = findDayCell(cal, 2);
+  assert.strictEqual(String(cal._get(back.row, back.col)), '김목사, 정집사(방송)');
+});
+
+test('다른 달을 보고 있어도 그 달 예외가 배정에 반영된다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사', '박전도사'], '방송': ['정집사'] });
+  ctx.ceRenderCalendar(2026, 9);
+  const cal = ss.getSheetByName('달력(예외자)');
+  const c1 = findDayCell(cal, 1);
+  cal._set(c1.row, c1.col, '이목사');
+
+  ctx.ceRenderCalendar(2026, 10);          // 달력은 10월을 보고 있지만
+  const out = ctx.ceGenerateMonth(2026, 9);  // 9월을 배정한다
+
+  const sh = ss.getSheetByName('2026-09');
+  const preachers = readRow(sh, 3, 1);
+  assert.strictEqual(preachers[1], '박전도사', '9/1 이목사가 건너뛰어져야 한다');
+  // 달력이 다른 달을 보고 있다는 이유로 경고하지 않는다
+  assert.ok(out.notes.every(n => n.indexOf('보고 있습니다') < 0), out.notes.join(' / '));
+});
+
+test('달력 저장용 숨김 탭이 생기고 숨겨져 있다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
+  ctx.ceRenderCalendar(2026, 9);
+  const store = ss.getSheetByName('_달력저장');
+  assert.ok(store, '저장 탭이 있어야 한다');
+  assert.strictEqual(store.hidden, true);
+  assert.deepStrictEqual(plain(ss.visibleNames()), ['달력(예외자)', '로테이션', '설정']);
 });
 
 test('명단이 비어 있으면 안내와 함께 멈춘다', () => {
@@ -447,31 +474,35 @@ test('쓰지 않는 기록 탭을 만들지 않는다', () => {
 
 /* ---------- 달력 연월 드롭다운 ---------- */
 
-test('달력 연월 칸(B1)에 오늘 기준 앞뒤 12개월이 붙는다', () => {
+test('달력 연월 목록은 이번 달이 맨 위, 앞뒤 6개월', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
   ctx.ceRenderCalendar(2026, 9);
-  const cal = ss.getSheetByName('달력(예외자)');
-  const rule = cal.validations.get('1,2');
+  const rule = ss.getSheetByName('달력(예외자)').validations.get('1,2');
   assert.ok(rule, 'B1 에 목록이 있어야 한다');
-  assert.strictEqual(rule.values.length, 25, '앞 12 + 이번 달 + 뒤 12');
+  assert.strictEqual(rule.values.length, 13, '이번 달 + 다음 6 + 지난 6');
   assert.ok(rule.values.every(v => /^\d{4}-\d{2}$/.test(v)), rule.values.slice(0, 3).join(','));
 
   const now = new Date();
   const p = n => String(n).padStart(2, '0');
-  const thisMonth = `${now.getFullYear()}-${p(now.getMonth() + 1)}`;
-  assert.strictEqual(rule.values[12], thisMonth, '가운데가 이번 달이어야 한다');
+  const at = off => {
+    const d = new Date(Date.UTC(now.getFullYear(), now.getMonth() + off, 1));
+    return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}`;
+  };
+  assert.strictEqual(rule.values[0], at(0), '맨 위가 이번 달');
+  assert.strictEqual(rule.values[1], at(1), '그 다음이 다음 달');
+  assert.strictEqual(rule.values[6], at(6));
+  assert.strictEqual(rule.values[7], at(-1), '다음 달들 뒤에 지난 달');
+  assert.strictEqual(rule.values[12], at(-6));
 });
 
 test('달력을 다시 그리지 않아도 시트를 열면 목록이 걸린다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
   const cal = ss.getSheetByName('달력(예외자)');
-  cal.validations.clear();                       // 예전 버전으로 만들어져 목록이 없던 상태
-  assert.strictEqual(cal.validations.get('1,2'), undefined);
-
-  ctx.ceEnsureCalendarDropdown();                // onOpen 이 하는 일
+  cal.validations.clear();
+  ctx.ceEnsureCalendarDropdown();
   const rule = cal.validations.get('1,2');
-  assert.ok(rule, '목록이 걸려야 한다');
-  assert.strictEqual(rule.values.length, 25);
+  assert.ok(rule);
+  assert.strictEqual(rule.values.length, 13);
 });
 
 test('달력 탭이 없으면 목록 걸기를 조용히 넘어간다', () => {
@@ -479,29 +510,25 @@ test('달력 탭이 없으면 목록 걸기를 조용히 넘어간다', () => {
   assert.strictEqual(ctx.ceEnsureCalendarDropdown(), false);
 });
 
-test('B1 을 바꾸면 그 달 달력이 그려진다', () => {
+test('B1 을 바꾸면 그 달 달력이 그려지고, 보던 달 내용은 저장된다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
   ctx.ceRenderCalendar(2026, 9);
   const cal = ss.getSheetByName('달력(예외자)');
 
-  // 9월 달력에 이름을 적어 두고
-  let col = 0;
-  for (let c = 1; c <= 7; c++) if (String(cal._get(4, c)) === '1') col = c;
-  cal._set(5, col, '김목사');
+  const sep1 = findDayCell(cal, 1);
+  cal._set(sep1.row, sep1.col, '김목사');
 
-  // B1 을 10월로 바꾼 뒤 onEdit 이 도는 상황
+  // 드롭다운에서 10월을 고른 상황: B1 이 먼저 바뀌고 onEdit 이 뒤따른다
   cal._set(1, 2, '2026-10');
   ctx.onEdit({ range: cal.getRange(1, 2) });
 
-  assert.deepStrictEqual(plain(ctx.ceCalendarYearMonth()), { year: 2026, month: 10 });
-  // 10월 1일은 목요일이므로 첫 주 목요일 칸에 1 이 있어야 한다
-  let found = false;
-  for (let r = 4; r <= 16; r += 2) for (let c = 1; c <= 7; c++) if (String(cal._get(r, c)) === '1') found = true;
-  assert.ok(found, '10월 날짜가 그려져야 한다');
-  // 이름 칸은 비어 있다
-  for (let r = 5; r <= 17; r += 2) {
-    for (let c = 1; c <= 7; c++) assert.strictEqual(String(cal._get(r, c)), '');
-  }
+  assert.deepStrictEqual(plain(ctx.ceStoreGetShownMonth()), { year: 2026, month: 10 });
+  const oct1 = findDayCell(cal, 1);
+  assert.strictEqual(String(cal._get(oct1.row, oct1.col)), '', '10월은 비어 있어야 한다');
+
+  // 저장된 9월 내용이 9/1 로 들어갔는지 (10/1 로 잘못 들어가면 안 된다)
+  const stored = plain(ctx.ceReadStoredExceptions());
+  assert.deepStrictEqual(stored, [{ name: '김목사', start: '2026-09-01', end: '2026-09-01', role: 'ALL' }]);
 });
 
 test('달력 아닌 칸을 고쳐도 onEdit 이 아무 일도 하지 않는다', () => {
