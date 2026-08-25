@@ -561,4 +561,69 @@ test('B1 에 알아볼 수 없는 값을 넣으면 달력을 건드리지 않는
   assert.deepStrictEqual(plain(snapshot()), before, '격자가 그대로여야 한다');
 });
 
+
+/* ---------- 명단에 없는 이름(오타) 알림 ---------- */
+
+test('달력에 명단에 없는 이름이 있으면 배정 안내로 알려 준다', () => {
+  const { ctx, ss } = prepared({
+    '설교': ['김목사', '이목사'], '방송': ['정집사'],
+    '토요설교': ['강목사'], '토요방송': ['임집사'],
+    '수요현관': ['오권사'], '토요찬양': ['서집사']
+  });
+  ctx.ceRenderCalendar(2026, 9);
+  const cal = ss.getSheetByName('달력(예외자)');
+  const c = findDayCell(cal, 1);
+  cal._set(c.row, c.col, '김목사님');          // 명단에는 '김목사'
+
+  const out = ctx.ceGenerateMonth(2026, 9);
+  const joined = out.notes.join('\n');
+  assert.ok(joined.indexOf('김목사님') >= 0, joined);
+  assert.ok(joined.indexOf('명단에 없는 이름') >= 0, joined);
+});
+
+test('이름이 맞으면 아무 말도 하지 않는다', () => {
+  const { ctx, ss } = prepared({
+    '설교': ['김목사', '이목사'], '방송': ['정집사'],
+    '토요설교': ['강목사'], '토요방송': ['임집사'],
+    '수요현관': ['오권사'], '토요찬양': ['서집사']
+  });
+  ctx.ceRenderCalendar(2026, 9);
+  const cal = ss.getSheetByName('달력(예외자)');
+  const c = findDayCell(cal, 1);
+  cal._set(c.row, c.col, '김목사');
+
+  const out = ctx.ceGenerateMonth(2026, 9);
+  assert.deepStrictEqual(plain(out.notes), []);
+});
+
+test("'휴일' 은 명단에 없어도 알리지 않는다", () => {
+  const { ctx, ss } = prepared({
+    '설교': ['김목사', '이목사'], '방송': ['정집사'],
+    '토요설교': ['강목사'], '토요방송': ['임집사'],
+    '수요현관': ['오권사'], '토요찬양': ['서집사']
+  });
+  ctx.ceRenderCalendar(2026, 9);
+  const cal = ss.getSheetByName('달력(예외자)');
+  const c = findDayCell(cal, 1);
+  cal._set(c.row, c.col, '휴일');
+
+  const out = ctx.ceGenerateMonth(2026, 9);
+  assert.deepStrictEqual(plain(out.notes), []);
+});
+
+test('다른 달에 적힌 오타는 이번 달 배정에서 알리지 않는다', () => {
+  const { ctx, ss } = prepared({
+    '설교': ['김목사', '이목사'], '방송': ['정집사'],
+    '토요설교': ['강목사'], '토요방송': ['임집사'],
+    '수요현관': ['오권사'], '토요찬양': ['서집사']
+  });
+  ctx.ceRenderCalendar(2026, 11);
+  const cal = ss.getSheetByName('달력(예외자)');
+  const c = findDayCell(cal, 10);
+  cal._set(c.row, c.col, '없는사람');
+
+  const out = ctx.ceGenerateMonth(2026, 9);
+  assert.deepStrictEqual(plain(out.notes), [], out.notes.join(' / '));
+});
+
 console.log('\n' + passed + ' passed');

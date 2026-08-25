@@ -64,7 +64,7 @@ function ceGenerateMonth(year, month) {
   return {
     sheetName: sheetName,
     warnings: ceCollectWarnings(grid, sched, cfg),
-    notes: ceFallbackNotes(rot, cfg)
+    notes: ceFallbackNotes(rot, cfg).concat(ceUnknownNameNotes(rot, ex, grid))
   };
 }
 
@@ -108,6 +108,34 @@ function ceFallbackNotes(rot, cfg) {
   check('door', '수요현관', '수요일 넷째 줄은 비워 두었습니다.');
   check('praise', '토요찬양', '토요일 넷째 줄은 비워 두었습니다.');
   return notes;
+}
+
+/**
+ * 달력에 적힌 이름이 명단에 없으면 알려 줍니다.
+ * '김목사' 를 '김목사님' 이라고 적으면 프로그램은 다른 사람으로 보고 그냥 넘어가므로,
+ * 그 사람은 빠지지 않고 그대로 표에 들어갑니다. 오타는 이렇게만 잡힙니다.
+ */
+function ceUnknownNameNotes(rot, exceptions, grid) {
+  var known = {};
+  for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) {
+    var list = rot[CE_ROTATION_COLUMNS[i].key] || [];
+    for (var n = 0; n < list.length; n++) known[list[n]] = true;
+  }
+
+  var seen = {};
+  var unknown = [];
+  for (var e = 0; e < exceptions.length; e++) {
+    var ex = exceptions[e];
+    if (ex.start < grid.startIso || ex.start > grid.endIso) continue;   // 이번 달 것만 봅니다
+    if (ceIsHolidayName(ex.name)) continue;                             // '휴일' 은 사람이 아닙니다
+    if (known[ex.name] || seen[ex.name]) continue;
+    seen[ex.name] = true;
+    unknown.push(ex.name + ' (' + ex.start + ')');
+  }
+
+  if (!unknown.length) return [];
+  return ['[' + CE_TAB.CALENDAR + '] 에 적힌 ' + unknown.join(', ') + ' 은(는) 명단에 없는 이름입니다. ' +
+    '이름이 다르면 그 사람은 빠지지 않고 그대로 배정됩니다. 오타가 아닌지 확인해 주세요.'];
 }
 
 function ceCollectWarnings(grid, sched, cfg) {
