@@ -23,12 +23,18 @@ function ceSpecialSlot(dow, info, cfg) {
   var doorDows = cfg.doorDows && cfg.doorDows.length ? cfg.doorDows : [3];
   var praiseDows = cfg.praiseDows && cfg.praiseDows.length ? cfg.praiseDows : [6];
   if (doorDows.indexOf(dow) >= 0) {
-    return { name: info.door || '', off: !!info.offDoor, gap: !!info.gapDoor, label: '수요현관' };
+    return {
+      name: info.door || '', off: !!info.offDoor, gap: !!info.gapDoor, label: '수요현관',
+      swapNote: info.specialSwapNote || '', warning: info.specialWarning || ''
+    };
   }
   if (praiseDows.indexOf(dow) >= 0) {
-    return { name: info.praise || '', off: !!info.offPraise, gap: !!info.gapPraise, label: '토요찬양' };
+    return {
+      name: info.praise || '', off: !!info.offPraise, gap: !!info.gapPraise, label: '토요찬양',
+      swapNote: info.specialSwapNote || '', warning: info.specialWarning || ''
+    };
   }
-  return { name: '', off: false, gap: false, label: '' };
+  return { name: '', off: false, gap: false, label: '', swapNote: '', warning: '' };
 }
 
 function ceMonthSheetName(year, month) {
@@ -55,7 +61,31 @@ function ceGenerateMonth(year, month) {
 
   var sched = ceBuildSchedule(cfg, rot, ex, grid.endIso);
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
-  return { sheetName: ceMonthSheetName(year, month), warnings: ceCollectWarnings(grid, sched, cfg) };
+
+  var notes = ceFallbackNotes(rot);
+  return {
+    sheetName: ceMonthSheetName(year, month),
+    warnings: ceCollectWarnings(grid, sched, cfg),
+    notes: notes
+  };
+}
+
+/** 비어 있어서 평일 명단으로 돌고 있는 토요 명단을 알려 줍니다. */
+function ceFallbackNotes(rot) {
+  var notes = [];
+  if (!(rot.satSermon || []).length) {
+    notes.push('[토요설교] 명단이 비어 있어 토요일도 [설교] 명단으로 이어서 돌았습니다.');
+  }
+  if (!(rot.satBroadcast || []).length) {
+    notes.push('[토요방송] 명단이 비어 있어 토요일도 [방송] 명단으로 이어서 돌았습니다.');
+  }
+  if (!(rot.praise || []).length) {
+    notes.push('[토요찬양] 명단이 비어 있어 토요일 넷째 줄은 비워 두었습니다.');
+  }
+  if (!(rot.door || []).length) {
+    notes.push('[수요현관] 명단이 비어 있어 수요일 넷째 줄은 비워 두었습니다.');
+  }
+  return notes;
 }
 
 function ceCollectWarnings(grid, sched, cfg) {
@@ -72,6 +102,7 @@ function ceCollectWarnings(grid, sched, cfg) {
       var a = sched.byIso[cell.iso];
       if (!a || cell.iso < grid.startIso) continue;
       if (a.warning) out.push(cell.iso + ' : ' + a.warning);
+      if (a.specialWarning) out.push(cell.iso + ' : ' + a.specialWarning);
       for (var i = 0; i < labels.length; i++) {
         if (a[labels[i].gap]) {
           out.push(cell.iso + ' : ' + labels[i].label + ' 를 채우지 못했습니다 (전원 예외)');
@@ -140,7 +171,7 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
         preacher: '', broadcast: '', door: '', praise: '',
         offSermon: false, offBroadcast: false, offDoor: false, offPraise: false,
         gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false,
-        swapNote: '', warning: ''
+        swapNote: '', warning: '', specialSwapNote: '', specialWarning: ''
       };
       dates.push(cell.day);
       preachers.push(a.preacher || '');
@@ -186,6 +217,12 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
       }
       if (info.warning) {
         sh.getRange(base + 2, col).setBackground(CE_COLOR.WARN_BG).setNote(info.warning);
+      }
+      if (special.swapNote) {
+        sh.getRange(base + 3, col).setNote('설교자·방송실과 겹쳐서 ' + special.swapNote);
+      }
+      if (special.warning) {
+        sh.getRange(base + 3, col).setBackground(CE_COLOR.WARN_BG).setNote(special.warning);
       }
       if (info.gapSermon) ceMarkGap(sh, base + 1, col);
       if (info.gapBroadcast) ceMarkGap(sh, base + 2, col);

@@ -109,6 +109,49 @@ test('예전 3열짜리 로테이션 탭에 빠진 열을 덧붙인다', () => {
   assert.deepStrictEqual(plain(read.satSermon), []);
 });
 
+test('새 명단 열은 기존 명단 바로 옆에 들어간다 (안내 문구 뒤로 밀리지 않게)', () => {
+  const { ctx, ss } = load();
+  // 예전 버전이 만들던 모습 그대로: A~C 명단, E열에 안내 문구
+  const rot = ss.insertSheet('로테이션');
+  rot._set(1, 1, '설교'); rot._set(2, 1, '김목사');
+  rot._set(1, 2, '방송'); rot._set(2, 2, '정집사');
+  rot._set(1, 3, '수요현관'); rot._set(2, 3, '오권사');
+  rot._set(1, 5, '2행부터 한 줄에 한 명씩, 설 순서대로 적으세요.');
+  rot._set(2, 5, '위에서 아래로 돌아갑니다.');
+
+  ctx.ceUpgradeRotation();
+
+  const headers = rot.getRange(1, 1, 1, rot.getLastColumn()).getValues()[0];
+  assert.deepStrictEqual(plain(headers.slice(0, 6)),
+    ['설교', '방송', '수요현관', '토요설교', '토요방송', '토요찬양']);
+  // 안내 문구는 오른쪽으로 밀렸을 뿐 사라지지 않는다
+  assert.ok(String(rot._get(1, 7)).indexOf('2행부터') === 0, '안내 문구가 보존되어야 한다');
+  // 기존 이름도 그대로
+  const read = ctx.ceReadRotations();
+  assert.deepStrictEqual(plain(read.sermon), ['김목사']);
+  assert.deepStrictEqual(plain(read.door), ['오권사']);
+});
+
+test('토요 명단이 비어 있으면 평일 명단으로 돌았다고 알려 준다', () => {
+  const { ctx } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  const out = ctx.ceGenerateMonth(2026, 9);
+  const joined = out.notes.join('\n');
+  assert.ok(joined.indexOf('[토요설교]') >= 0, '토요설교 안내가 있어야 한다');
+  assert.ok(joined.indexOf('[토요방송]') >= 0, '토요방송 안내가 있어야 한다');
+  assert.ok(joined.indexOf('[토요찬양]') >= 0);
+  assert.ok(joined.indexOf('[수요현관]') >= 0);
+});
+
+test('토요 명단을 채우면 그 안내는 사라진다', () => {
+  const { ctx } = prepared({
+    '설교': ['김목사'], '방송': ['정집사'],
+    '토요설교': ['강목사'], '토요방송': ['임집사'],
+    '수요현관': ['오권사'], '토요찬양': ['서집사']
+  });
+  const out = ctx.ceGenerateMonth(2026, 9);
+  assert.deepStrictEqual(plain(out.notes), []);
+});
+
 test("예전 '수요저녁 요일' 설정을 그대로 알아본다", () => {
   const { ctx, ss } = load();
   const set = ss.insertSheet('설정');

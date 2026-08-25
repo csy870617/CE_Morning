@@ -72,6 +72,15 @@ function makeSheet(name) {
     getRange(row, col, numRows, numCols) {
       return makeRange(sheet, row, col, numRows === undefined ? 1 : numRows, numCols === undefined ? 1 : numCols);
     },
+    insertColumnBefore(col) {
+      const moved = new Map();
+      for (const [k, v] of sheet.cells) {
+        const [r, c] = k.split(',').map(Number);
+        moved.set(c >= col ? `${r},${c + 1}` : k, v);
+      }
+      sheet.cells = moved;
+      return sheet;
+    },
     clear() { sheet.cells.clear(); sheet.notes.clear(); return sheet; },
     clearNotes() { sheet.notes.clear(); return sheet; },
     setColumnWidth: () => sheet,

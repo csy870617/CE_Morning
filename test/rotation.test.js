@@ -451,4 +451,117 @@ test('토요찬양 역할 이름 파싱', () => {
   assert.strictEqual(R.ceNormalizeRole('찬양'), R.CE_ROLE.PRAISE);
 });
 
+
+/* ---------- 수요현관·토요찬양이 그날 설교·방송과 겹칠 때 ---------- */
+
+test('수요현관이 그날 설교자와 겹치면 다음 주와 맞바꾼다', () => {
+  // 새벽예배가 주 6일이므로 명단이 4명이면 수요일 담당이 주마다 달라집니다.
+  // (인원이 6의 약수면 매주 같은 사람이 수요일에 걸려 옮길 자리가 없습니다.)
+  const rot = {
+    sermon: ['ㄴ', 'ㄷ', '오', '김'], broadcast: ['ㄱ'], satSermon: [], satBroadcast: [],
+    door: ['오', '윤'], praise: []
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-09');
+  assert.strictEqual(s.byIso['2026-09-02'].preacher, '오');
+  assert.strictEqual(s.byIso['2026-09-09'].preacher, 'ㄴ', '9/9 에는 겹치지 않아야 옮길 수 있다');
+  assert.strictEqual(s.byIso['2026-09-02'].door, '윤');
+  assert.strictEqual(s.byIso['2026-09-09'].door, '오');
+  assert.strictEqual(s.byIso['2026-09-02'].specialSwapNote, '2026-09-09 과 교대');
+});
+
+test('수요현관이 그날 방송실과 겹쳐도 다음 주와 맞바꾼다', () => {
+  const days = [
+    { iso: '2026-09-02', door: '오' },
+    { iso: '2026-09-09', door: '윤' }
+  ];
+  const dawn = {
+    '2026-09-02': { preacher: '김', broadcast: '오' },   // 설교자가 아니라 방송실과 겹친다
+    '2026-09-09': { preacher: '김', broadcast: 'ㄱ' }
+  };
+  R.ceResolveSpecialConflicts(days, 'door', R.CE_ROLE.DOOR, dawn, [], '수요현관');
+  assert.strictEqual(days[0].door, '윤');
+  assert.strictEqual(days[1].door, '오');
+});
+
+test('토요찬양이 그날 토요설교와 겹치면 다음 토요일과 맞바꾼다', () => {
+  const rot = {
+    sermon: ['김'], broadcast: ['ㄱ'],
+    satSermon: ['강', '조'], satBroadcast: ['임'],
+    door: [], praise: ['강', '서']
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-12');
+  assert.strictEqual(s.byIso['2026-09-05'].preacher, '강');
+  assert.strictEqual(s.byIso['2026-09-12'].preacher, '조');
+  assert.strictEqual(s.byIso['2026-09-05'].praise, '서');   // 겹쳐서 밀림
+  assert.strictEqual(s.byIso['2026-09-12'].praise, '강');
+  assert.strictEqual(s.byIso['2026-09-12'].specialSwapNote, '2026-09-05 과 교대');
+});
+
+test('겹치지 않으면 그냥 순서대로 둔다', () => {
+  const rot = {
+    sermon: ['김'], broadcast: ['ㄱ'], satSermon: [], satBroadcast: [],
+    door: ['오', '윤'], praise: []
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-09');
+  assert.strictEqual(s.byIso['2026-09-02'].door, '오');
+  assert.strictEqual(s.byIso['2026-09-09'].door, '윤');
+  assert.strictEqual(s.byIso['2026-09-02'].specialSwapNote, '');
+});
+
+test('맞바꿔도 계속 겹치면 그 다음 주로 밀어서 찾는다', () => {
+  // 그 주 새벽 담당을 직접 지정해 놓고 교대만 확인합니다.
+  const days = [
+    { iso: '2026-09-02', door: '오' },
+    { iso: '2026-09-09', door: '윤' },
+    { iso: '2026-09-16', door: '서' }
+  ];
+  const dawn = {
+    '2026-09-02': { preacher: '오', broadcast: 'ㄱ' },   // '오' 가 겹친다
+    '2026-09-09': { preacher: '김', broadcast: '오' },   // 여기로 옮겨도 '오' 가 또 겹친다
+    '2026-09-16': { preacher: '김', broadcast: 'ㄱ' }    // 여기는 비어 있다
+  };
+  R.ceResolveSpecialConflicts(days, 'door', R.CE_ROLE.DOOR, dawn, [], '수요현관');
+  assert.strictEqual(days[0].door, '서');
+  assert.strictEqual(days[2].door, '오');
+  assert.strictEqual(days[1].door, '윤', '가운데 주는 건드리지 않는다');
+  assert.ok(!days[0].warning);
+});
+
+test('바꿀 상대가 그날 휴가면 건너뛴다 (넷째 줄)', () => {
+  const days = [
+    { iso: '2026-09-02', door: '오' },
+    { iso: '2026-09-09', door: '윤' },
+    { iso: '2026-09-16', door: '서' }
+  ];
+  const dawn = {
+    '2026-09-02': { preacher: '오', broadcast: 'ㄱ' },
+    '2026-09-09': { preacher: '김', broadcast: 'ㄱ' },
+    '2026-09-16': { preacher: '김', broadcast: 'ㄱ' }
+  };
+  const ex = [{ name: '윤', start: '2026-09-02', end: '2026-09-02', role: R.CE_ROLE.ALL }];
+  R.ceResolveSpecialConflicts(days, 'door', R.CE_ROLE.DOOR, dawn, ex, '수요현관');
+  assert.strictEqual(days[0].door, '서');
+  assert.strictEqual(days[2].door, '오');
+});
+
+test('수요현관 명단이 한 명뿐이라 바꿀 상대가 없으면 경고가 남는다', () => {
+  const rot = {
+    sermon: ['오'], broadcast: ['ㄱ'], satSermon: [], satBroadcast: [],
+    door: ['오'], praise: []
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-09');
+  assert.ok(s.byIso['2026-09-02'].specialWarning, '경고가 있어야 한다');
+  assert.strictEqual(s.byIso['2026-09-02'].door, '오');
+});
+
+test('수요현관 교대가 토요찬양 순번을 건드리지 않는다', () => {
+  const rot = {
+    sermon: ['오'], broadcast: ['ㄱ'], satSermon: [], satBroadcast: [],
+    door: ['오', '윤'], praise: ['서', '표']
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-12');
+  assert.strictEqual(s.byIso['2026-09-05'].praise, '서');
+  assert.strictEqual(s.byIso['2026-09-12'].praise, '표');
+});
+
 console.log('\n' + passed + ' passed');

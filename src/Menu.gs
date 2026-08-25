@@ -78,9 +78,18 @@ function ceRunGenerate(year, month) {
     var out = ceGenerateMonth(year, month);
     var sh = ceSheet(out.sheetName, false);
     if (sh) ceSS().setActiveSheet(sh);
-    ui.alert(out.warnings.length
-      ? '[' + out.sheetName + '] 배정을 마쳤습니다.\n\n다만 아래는 확인이 필요합니다:\n\n' + out.warnings.join('\n')
-      : '[' + out.sheetName + '] 배정을 마쳤습니다.');
+
+    var msg = ['[' + out.sheetName + '] 배정을 마쳤습니다.'];
+    if (out.notes.length) {
+      msg.push('');
+      msg.push(out.notes.join('\n'));
+    }
+    if (out.warnings.length) {
+      msg.push('');
+      msg.push('확인이 필요한 날:');
+      msg.push(out.warnings.join('\n'));
+    }
+    ui.alert(msg.join('\n'));
   } catch (e) {
     ui.alert('오류: ' + e.message);
   }

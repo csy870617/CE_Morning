@@ -68,25 +68,50 @@ function ceUpgradeSettings() {
   return added;
 }
 
-/** 이미 있는 로테이션 탭에 빠진 명단 열을 오른쪽에 덧붙입니다. */
+/**
+ * 이미 있는 로테이션 탭에 빠진 명단 열을 채워 넣습니다.
+ * 안내 문구 뒤 멀찍이 붙으면 못 보고 지나치기 쉬우므로,
+ * 기존 명단 열 바로 다음 자리에 끼워 넣습니다.
+ */
 function ceUpgradeRotation() {
   var sh = ceSheet(CE_TAB.ROTATION, false);
   if (!sh) return [];
 
   var found = ceRotationColumnMap(sh);
-  var col = Math.max(sh.getLastColumn(), 1) + 1;
+  var lastNameCol = 0;
+  for (var key in found) {
+    if (Object.prototype.hasOwnProperty.call(found, key)) {
+      lastNameCol = Math.max(lastNameCol, found[key]);
+    }
+  }
+
   var added = [];
+  var col = lastNameCol + 1;
   for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) {
     var def = CE_ROTATION_COLUMNS[i];
     if (found[def.key]) continue;
+
+    // 그 자리에 뭔가 적혀 있으면(안내 문구 등) 열을 새로 끼워 넣어 밀어냅니다.
+    if (ceColumnHasContent(sh, col)) sh.insertColumnBefore(col);
+
     sh.getRange(1, col).setValue(def.header)
       .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff')
       .setFontWeight('bold').setHorizontalAlignment('center');
-    sh.setColumnWidth(col, 140);
+    sh.setColumnWidth(col, 130);
     added.push(def.header);
     col++;
   }
   return added;
+}
+
+function ceColumnHasContent(sh, col) {
+  var lastRow = sh.getLastRow();
+  if (lastRow < 1 || col > sh.getMaxColumns()) return false;
+  var values = sh.getRange(1, col, lastRow, 1).getValues();
+  for (var r = 0; r < values.length; r++) {
+    if (String(values[r][0] == null ? '' : values[r][0]).trim() !== '') return true;
+  }
+  return false;
 }
 
 /** 이번 주(또는 다음 달 1일이 속한 주)의 월요일 - 기준일 기본값으로 씁니다. */
