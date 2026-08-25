@@ -18,23 +18,18 @@ var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요/토요'];
 /**
  * 넷째 줄은 요일에 따라 내용이 바뀝니다.
  * 수요일에는 수요현관 담당, 토요일에는 토요찬양 담당이 들어갑니다.
+ * 이 줄은 그날 설교자·방송실과 겹쳐도 손대지 않고 명단 순서대로 갑니다.
  */
 function ceSpecialSlot(dow, info, cfg) {
   var doorDows = cfg.doorDows && cfg.doorDows.length ? cfg.doorDows : [3];
   var praiseDows = cfg.praiseDows && cfg.praiseDows.length ? cfg.praiseDows : [6];
   if (doorDows.indexOf(dow) >= 0) {
-    return {
-      name: info.door || '', off: !!info.offDoor, gap: !!info.gapDoor, label: '수요현관',
-      swapNote: info.specialSwapNote || '', warning: info.specialWarning || ''
-    };
+    return { name: info.door || '', off: !!info.offDoor, gap: !!info.gapDoor, label: '수요현관' };
   }
   if (praiseDows.indexOf(dow) >= 0) {
-    return {
-      name: info.praise || '', off: !!info.offPraise, gap: !!info.gapPraise, label: '토요찬양',
-      swapNote: info.specialSwapNote || '', warning: info.specialWarning || ''
-    };
+    return { name: info.praise || '', off: !!info.offPraise, gap: !!info.gapPraise, label: '토요찬양' };
   }
-  return { name: '', off: false, gap: false, label: '', swapNote: '', warning: '' };
+  return { name: '', off: false, gap: false, label: '' };
 }
 
 function ceMonthSheetName(year, month) {
@@ -130,7 +125,6 @@ function ceCollectWarnings(grid, sched, cfg) {
       var a = sched.byIso[cell.iso];
       if (!a || cell.iso < grid.startIso) continue;
       if (a.warning) out.push(cell.iso + ' : ' + a.warning);
-      if (a.specialWarning) out.push(cell.iso + ' : ' + a.specialWarning);
       for (var i = 0; i < labels.length; i++) {
         if (a[labels[i].gap]) {
           out.push(cell.iso + ' : ' + labels[i].label + ' 를 채우지 못했습니다 (전원 예외)');
@@ -199,7 +193,7 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
         preacher: '', broadcast: '', door: '', praise: '',
         offSermon: false, offBroadcast: false, offDoor: false, offPraise: false,
         gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false,
-        swapNote: '', warning: '', specialSwapNote: '', specialWarning: ''
+        swapNote: '', warning: ''
       };
       dates.push(cell.day);
       preachers.push(a.preacher || '');
@@ -245,12 +239,6 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
       }
       if (info.warning) {
         sh.getRange(base + 2, col).setBackground(CE_COLOR.WARN_BG).setNote(info.warning);
-      }
-      if (special.swapNote) {
-        sh.getRange(base + 3, col).setNote('설교자·방송실과 겹쳐서 ' + special.swapNote);
-      }
-      if (special.warning) {
-        sh.getRange(base + 3, col).setBackground(CE_COLOR.WARN_BG).setNote(special.warning);
       }
       if (info.gapSermon) ceMarkGap(sh, base + 1, col);
       if (info.gapBroadcast) ceMarkGap(sh, base + 2, col);

@@ -42,7 +42,7 @@ function ceLogRowsForMonth(year, month, grid, sched, cfg, stamp) {
       }
       if (special.label && (special.name || special.off || special.gap)) {
         rows.push([cell.iso, dowName, special.label, special.name || '',
-          ceLogNote(special.off, special.gap, special.swapNote, special.warning), stamp]);
+          ceLogNote(special.off, special.gap, '', ''), stamp]);
       }
     }
   }
