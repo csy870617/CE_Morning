@@ -26,6 +26,9 @@ function makeRange(sheet, row, col, numRows, numCols) {
       }
       return r;
     },
+    getSheet: () => sheet,
+    getColumn: () => col,
+    getNumRows: () => numRows,
     setNote(v) { sheet.notes.set(`${row},${col}`, v); return r; },
     clearContent() {
       for (let i = 0; i < numRows; i++) {
@@ -39,7 +42,7 @@ function makeRange(sheet, row, col, numRows, numCols) {
       return r;
     },
     breakApart() { sheet.merges = []; return r; },
-    setDataValidation() { return r; }
+    setDataValidation(rule) { sheet.validations.set(`${row},${col}`, rule); return r; }
   };
   ['setBackground', 'setFontColor', 'setFontWeight', 'setFontSize', 'setFontStyle',
    'setHorizontalAlignment', 'setWrap', 'setNumberFormat', 'setBorder'].forEach(m => { r[m] = () => r; });
@@ -51,6 +54,7 @@ function makeSheet(name) {
     name,
     cells: new Map(),
     notes: new Map(),
+    validations: new Map(),
     merges: [],
     hidden: false,
     _key: (row, col) => `${row},${col}`,
@@ -112,6 +116,7 @@ function makeSpreadsheet() {
     insertSheet(n) { const s = makeSheet(n); sheets.push(s); return s; },
     setActiveSheet(s) { active = s; return s; },
     getActiveSheet: () => active,
+    toast() {},
     moveActiveSheet(pos) {
       if (!active) return;
       const i = sheets.indexOf(active);
@@ -132,9 +137,15 @@ function makeContext() {
       console,
       SpreadsheetApp: {
         getActiveSpreadsheet: () => ss,
-        newDataValidation: () => ({
-          requireValueInList: () => ({ setAllowInvalid: () => ({ build: () => ({}) }) })
-        }),
+        newDataValidation: () => {
+          let values = null;
+          const builder = {
+            requireValueInList(list) { values = list.slice(); return builder; },
+            setAllowInvalid() { return builder; },
+            build: () => ({ values })
+          };
+          return builder;
+        },
         BorderStyle: { SOLID: 'SOLID' },
         getUi() { throw new Error('테스트에서는 UI 를 쓰지 않습니다'); }
       },

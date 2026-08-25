@@ -720,6 +720,18 @@ function ceFormatYearMonth(year, month) {
   return year + '-' + (month < 10 ? '0' + month : month);
 }
 
+/** B1 드롭다운에 넣을 연월 목록. 오늘이 낀 달을 가운데 두고 앞뒤로 벌립니다. */
+function ceMonthChoices() {
+  var now = new Date();
+  var d = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 6, 1));
+  var list = [];
+  for (var i = 0; i < 25; i++) {
+    list.push(ceFormatYearMonth(d.getUTCFullYear(), d.getUTCMonth() + 1));
+    d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+  }
+  return list;
+}
+
 /** 이름 칸 한 줄을 [{name, role}] 로 풉니다. */
 function ceParseNameCell(text) {
   var s = String(text == null ? '' : text).trim();
@@ -787,10 +799,19 @@ function ceRenderCalendar(year, month) {
   sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).breakApart();
 
   sh.getRange(CE_CAL.YM_ROW, 1).setValue('연월').setFontWeight('bold');
-  sh.getRange(CE_CAL.YM_ROW, CE_CAL.YM_COL).setValue(ceFormatYearMonth(year, month))
-    .setNumberFormat('@').setFontWeight('bold').setBackground('#fff2cc');
+
+  var ymCell = sh.getRange(CE_CAL.YM_ROW, CE_CAL.YM_COL);
+  ymCell.setNumberFormat('@');
+  ymCell.setDataValidation(
+    SpreadsheetApp.newDataValidation()
+      .requireValueInList(ceMonthChoices(), true)
+      .setAllowInvalid(true)
+      .build());
+  ymCell.setValue(ceFormatYearMonth(year, month))
+    .setFontWeight('bold').setBackground('#fff2cc').setHorizontalAlignment('center');
+
   sh.getRange(CE_CAL.YM_ROW, 3, 1, 5).merge()
-    .setValue('메뉴에서 [달력 다시 그리기] 로 달을 바꾸면 날짜만 새로 나오고 이름 칸은 비워집니다.')
+    .setValue('◀ 이 칸을 눌러 달을 고르세요. 고르는 즉시 그 달 달력이 그려집니다 (이름 칸은 비워집니다).')
     .setFontColor('#666666');
 
   sh.setRowHeight(2, 34);
@@ -943,7 +964,7 @@ function ceFallbackNotes(rot, cfg, year, month) {
   function check(key, header, whenEmpty) {
     if (!cols[key]) {
       notes.push('[' + header + '] 열을 "' + CE_TAB.ROTATION + '" 탭에서 찾지 못했습니다. ' +
-        '[① 초기 설정 만들기] 를 한 번 더 눌러 주세요.');
+        '[초기 설정 만들기] 를 한 번 더 눌러 주세요.');
       return;
     }
     if (!(rot[key] || []).length) {
@@ -1304,14 +1325,37 @@ function ceSetupRotation() {
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('새벽예배 배정')
-    .addItem('① 초기 설정 만들기', 'ceMenuSetup')
-    .addSeparator()
-    .addItem('② 달력 다시 그리기 (달 바꾸기)', 'ceMenuRenderCalendar')
-    .addItem('③ 이번 달 배정하기', 'ceMenuGenerateThisMonth')
-    .addItem('④ 다른 달 배정하기…', 'ceMenuGeneratePickMonth')
+    .addItem('배정하기', 'ceMenuGenerate')
+    .addItem('달력 다시 그리기', 'ceMenuRenderCalendar')
     .addSeparator()
     .addItem('명단·예외 점검', 'ceMenuCheck')
+    .addSeparator()
+    .addItem('초기 설정 만들기', 'ceMenuSetup')
     .addToUi();
+}
+
+/**
+ * 달력 탭의 연월 칸(B1)을 고치면 그 달로 다시 그립니다.
+ * 드롭다운에서 달을 고르면 바로 반영됩니다.
+ */
+function onEdit(e) {
+  if (!e || !e.range) return;
+  var sh = e.range.getSheet();
+  if (sh.getName() !== CE_TAB.CALENDAR) return;
+  if (e.range.getRow() !== CE_CAL.YM_ROW || e.range.getColumn() !== CE_CAL.YM_COL) return;
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ym = ceParseYearMonth(e.range.getValue());
+  if (!ym) {
+    ss.toast('연월을 알아볼 수 없습니다. 2026-09 형식으로 골라 주세요.', '달력', 5);
+    return;
+  }
+  try {
+    ceRenderCalendar(ym.year, ym.month);
+    ss.toast(ceFormatYearMonth(ym.year, ym.month) + ' 달력을 그렸습니다. 이름 칸은 비어 있습니다.', '달력', 5);
+  } catch (err) {
+    ss.toast('달력을 그리지 못했습니다: ' + err.message, '달력', 8);
+  }
 }
 
 function ceMenuSetup() {
@@ -1325,7 +1369,7 @@ function ceMenuSetup() {
     if (!msg.length) msg.push('필요한 탭이 이미 모두 있습니다.');
     msg.push('');
     msg.push('[로테이션] 탭에 이름을 넣고, [설정] 탭의 로테이션 시작일을 확인한 뒤');
-    msg.push('[③ 이번 달 배정하기] 를 눌러 주세요.');
+    msg.push('[배정하기] 를 눌러 주세요.');
     ui.alert(msg.join('\n'));
   } catch (e) {
     ui.alert('오류: ' + e.message);
@@ -1343,7 +1387,8 @@ function ceMenuRenderCalendar() {
     }
     var res = ui.prompt('달력 다시 그리기',
       '어느 달을 보시겠습니까?  (예: ' + ceFormatYearMonth(current.year, current.month) + ')\n\n' +
-      '※ 날짜만 새로 나오고 이름 칸은 비워집니다. 지금 적어 두신 내용은 남지 않습니다.',
+      '달력 탭의 연월 칸(B1)에서 골라도 됩니다.\n' +
+      '※ 날짜만 새로 나오고 이름 칸은 비워집니다.',
       ui.ButtonSet.OK_CANCEL);
     if (res.getSelectedButton() !== ui.Button.OK) return;
     var ym = ceParseYearMonth(res.getResponseText());
@@ -1356,19 +1401,22 @@ function ceMenuRenderCalendar() {
   }
 }
 
-function ceMenuGenerateThisMonth() {
-  var now = new Date();
-  ceRunGenerate(now.getFullYear(), now.getMonth() + 1);
-}
-
-function ceMenuGeneratePickMonth() {
+function ceMenuGenerate() {
   var ui = SpreadsheetApp.getUi();
   var now = new Date();
-  var res = ui.prompt('다른 달 배정하기',
-    '어느 달을 배정할까요?  (예: ' + ceFormatYearMonth(now.getFullYear(), now.getMonth() + 1) + ')',
+  var suggested = ceFormatYearMonth(now.getFullYear(), now.getMonth() + 1);
+
+  // 달력이 어떤 달을 보고 있으면 그 달을 먼저 권합니다. 예외가 거기 적혀 있기 때문입니다.
+  var shown = ceCalendarYearMonth();
+  if (shown) suggested = ceFormatYearMonth(shown.year, shown.month);
+
+  var res = ui.prompt('배정하기',
+    '어느 달을 배정할까요?\n\n비워 두고 [확인] 을 누르면 ' + suggested + ' 로 배정합니다.',
     ui.ButtonSet.OK_CANCEL);
   if (res.getSelectedButton() !== ui.Button.OK) return;
-  var ym = ceParseYearMonth(res.getResponseText());
+
+  var typed = String(res.getResponseText() || '').trim();
+  var ym = typed ? ceParseYearMonth(typed) : ceParseYearMonth(suggested);
   if (!ym) { ui.alert('YYYY-MM 형식으로 적어 주세요. 예) 2026-09'); return; }
   ceRunGenerate(ym.year, ym.month);
 }
@@ -1428,7 +1476,7 @@ function ceMenuCheck() {
     if (missing.length) {
       lines.push('');
       lines.push('※ 열을 못 찾은 명단: ' + missing.join(', '));
-      lines.push('   [① 초기 설정 만들기] 를 한 번 더 누르면 열을 만들어 드립니다.');
+      lines.push('   [초기 설정 만들기] 를 한 번 더 누르면 열을 만들어 드립니다.');
     }
     if (!rot.satSermon.length || !rot.satBroadcast.length) {
       lines.push('');

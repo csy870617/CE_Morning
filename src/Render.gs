@@ -104,7 +104,7 @@ function ceFallbackNotes(rot, cfg, year, month) {
   function check(key, header, whenEmpty) {
     if (!cols[key]) {
       notes.push('[' + header + '] 열을 "' + CE_TAB.ROTATION + '" 탭에서 찾지 못했습니다. ' +
-        '[① 초기 설정 만들기] 를 한 번 더 눌러 주세요.');
+        '[초기 설정 만들기] 를 한 번 더 눌러 주세요.');
       return;
     }
     if (!(rot[key] || []).length) {
