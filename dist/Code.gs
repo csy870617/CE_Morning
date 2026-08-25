@@ -401,8 +401,7 @@ var CE_TAB = {
   SETTINGS: '설정',
   ROTATION: '로테이션',
   CALENDAR: '달력(예외자)',
-  STORE: '_달력저장',
-  LOG: '_기록'
+  STORE: '_달력저장'
 };
 
 /** 예전에 쓰던 탭 이름. 열어 보고 있으면 새 이름으로 바꿔 줍니다. */
@@ -942,14 +941,12 @@ function ceGenerateMonth(year, month) {
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
 
   var sheetName = ceMonthSheetName(year, month);
-  var swaps = ceAppendLog(year, month, grid, sched, cfg);
   ceOrderTabs(sheetName);
 
   return {
     sheetName: sheetName,
     warnings: ceCollectWarnings(grid, sched, cfg),
-    notes: ceFallbackNotes(rot, cfg),
-    swaps: swaps.map(function (r) { return r[0] + ' ' + r[2] + ' : ' + r[3]; })
+    notes: ceFallbackNotes(rot, cfg)
   };
 }
 
@@ -1145,116 +1142,6 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
   // 1열만 고정하면 병합된 칸이 갈라져 구글 시트가 막습니다. 표가 7열뿐이라
   // 가로로 밀 일도 없으므로, 대신 위쪽 두 줄을 고정합니다.
   sh.setFrozenRows(CE_OUT.DOW_ROW);
-  return sh;
-}
-
-/* ===== Log.gs ===== */
-
-/**
- * 배정 기록 (_기록 탭).
- *
- * 배정을 돌릴 때마다 그 달의 결과를 쌓아 둡니다. 이미 있는 달은 새로 갈아 끼우고
- * 다른 달의 기록은 그대로 두므로, 달을 거듭할수록 기록이 누적됩니다.
- *
- * 특히 '교대' 를 남깁니다. 겹침 때문에 순서를 벗어나 선 자리가 어디였는지
- * 나중에 확인하기 위한 것입니다.
- */
-
-var CE_LOG_HEADERS = ['날짜', '요일', '역할', '담당', '비고', '기록시각'];
-
-/** 한 줄의 비고를 만듭니다. */
-function ceLogNote(off, gap, swapNote, warning) {
-  if (off) return '휴일';
-  if (gap) return '미배정 (전원 예외)';
-  if (warning) return '확인 필요: ' + warning;
-  if (swapNote) return '교대 — ' + swapNote;
-  return '';
-}
-
-/** 그 달의 배정을 기록 줄로 펼칩니다. (다른 달 날짜는 뺍니다) */
-function ceLogRowsForMonth(year, month, grid, sched, cfg, stamp) {
-  var rows = [];
-  for (var w = 0; w < grid.weeks.length; w++) {
-    for (var c = 0; c < CE_OUT.COLS; c++) {
-      var cell = grid.weeks[w][c];
-      if (!cell.inMonth) continue;
-      var a = sched.byIso[cell.iso];
-      if (!a) continue;
-
-      var dowName = CE_DOW_NAMES[cell.dow];
-      var special = ceSpecialSlot(cell.dow, a, cfg);
-
-      if (a.preacher || a.offSermon || a.gapSermon) {
-        rows.push([cell.iso, dowName, '설교자', a.preacher || '',
-          ceLogNote(a.offSermon, a.gapSermon, '', ''), stamp]);
-      }
-      if (a.broadcast || a.offBroadcast || a.gapBroadcast) {
-        rows.push([cell.iso, dowName, '방송실', a.broadcast || '',
-          ceLogNote(a.offBroadcast, a.gapBroadcast, a.swapNote, a.warning), stamp]);
-      }
-      if (special.label && (special.name || special.off || special.gap)) {
-        rows.push([cell.iso, dowName, special.label, special.name || '',
-          ceLogNote(special.off, special.gap, '', ''), stamp]);
-      }
-    }
-  }
-  return rows;
-}
-
-function ceLogSheet() {
-  var sh = ceSheet(CE_TAB.LOG, true);
-  if (sh.getLastRow() < 1) {
-    sh.getRange(1, 1, 1, CE_LOG_HEADERS.length).setValues([CE_LOG_HEADERS])
-      .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff').setFontWeight('bold');
-    sh.setFrozenRows(1);
-    sh.setColumnWidth(1, 100);
-    sh.setColumnWidth(4, 120);
-    sh.setColumnWidth(5, 320);
-    sh.setColumnWidth(6, 140);
-  }
-  return sh;
-}
-
-function ceReadLog() {
-  var sh = ceSheet(CE_TAB.LOG, false);
-  if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, CE_LOG_HEADERS.length).getValues()
-    .filter(function (r) { return String(r[0]).trim() !== ''; })
-    .map(function (r) { return [ceCellToIso(r[0]) || String(r[0]), r[1], r[2], r[3], r[4], r[5]]; });
-}
-
-/**
- * 그 달의 기록만 갈아 끼우고 나머지는 그대로 둡니다.
- * 반환값은 이번 달에 생긴 '교대' 줄들입니다.
- */
-function ceAppendLog(year, month, grid, sched, cfg) {
-  var prefix = ceFormatYearMonth(year, month);
-  var stamp = Utilities.formatDate(new Date(), ceTz(), 'yyyy-MM-dd HH:mm');
-  var fresh = ceLogRowsForMonth(year, month, grid, sched, cfg, stamp);
-
-  var kept = ceReadLog().filter(function (r) { return String(r[0]).indexOf(prefix) !== 0; });
-  var all = kept.concat(fresh);
-  all.sort(function (a, b) {
-    if (a[0] !== b[0]) return a[0] < b[0] ? -1 : 1;
-    return String(a[2]) < String(b[2]) ? -1 : 1;
-  });
-
-  var sh = ceLogSheet();
-  if (sh.getLastRow() > 1) {
-    sh.getRange(2, 1, sh.getLastRow() - 1, CE_LOG_HEADERS.length).clearContent();
-  }
-  if (all.length) sh.getRange(2, 1, all.length, CE_LOG_HEADERS.length).setValues(all);
-  sh.hideSheet();
-
-  return fresh.filter(function (r) { return String(r[4]).indexOf('교대') === 0; });
-}
-
-/** 기록 탭을 펼쳐 보여 줍니다. */
-function ceShowLog() {
-  var sh = ceSheet(CE_TAB.LOG, false);
-  if (!sh) return null;
-  sh.showSheet();
-  ceSS().setActiveSheet(sh);
   return sh;
 }
 
@@ -1457,7 +1344,6 @@ function onOpen() {
     .addItem('④ 다른 달 배정하기…', 'ceMenuGeneratePickMonth')
     .addSeparator()
     .addItem('명단·예외 점검', 'ceMenuCheck')
-    .addItem('배정 기록 보기', 'ceMenuShowLog')
     .addToUi();
 }
 
@@ -1527,11 +1413,6 @@ function ceRunGenerate(year, month) {
     if (sh) ceSS().setActiveSheet(sh);
 
     var msg = ['[' + out.sheetName + '] 배정을 마쳤습니다.'];
-    if (out.swaps.length) {
-      msg.push('');
-      msg.push('겹침 때문에 맞바꾼 자리 ' + out.swaps.length + '곳 (칸에 메모가 붙어 있습니다):');
-      msg.push(out.swaps.join('\n'));
-    }
     if (out.notes.length) {
       msg.push('');
       msg.push(out.notes.join('\n'));
@@ -1545,19 +1426,6 @@ function ceRunGenerate(year, month) {
   } catch (e) {
     ui.alert('오류: ' + e.message);
   }
-}
-
-function ceMenuShowLog() {
-  var ui = SpreadsheetApp.getUi();
-  var sh = ceShowLog();
-  if (!sh) {
-    ui.alert('아직 기록이 없습니다. 한 번이라도 배정을 돌리면 쌓이기 시작합니다.');
-    return;
-  }
-  ui.alert('[' + CE_TAB.LOG + '] 탭을 펼쳤습니다.\n\n' +
-    '배정을 돌릴 때마다 그 달의 결과가 여기 쌓입니다. 같은 달을 다시 돌리면\n' +
-    '그 달 기록만 새로 갈아 끼우고 다른 달은 그대로 둡니다.\n\n' +
-    '다 보신 뒤에는 탭을 마우스 오른쪽 클릭 → [시트 숨기기] 하시면 됩니다.');
 }
 
 function ceMenuCheck() {
@@ -1607,11 +1475,13 @@ function ceMenuCheck() {
     ex.forEach(function (e) { if (ceIsHolidayName(e.name)) holidayCount++; });
     lines.push('등록된 예외 ' + (ex.length - holidayCount) + '건, 휴일 ' + holidayCount + '건');
 
-    var leftover = ceSS().getSheetByName('장기예외');
-    if (leftover) {
+    var stale = [];
+    if (ceSS().getSheetByName('장기예외')) stale.push('장기예외');
+    if (ceSS().getSheetByName('_기록')) stale.push('_기록');
+    if (stale.length) {
       lines.push('');
-      lines.push('※ [장기예외] 탭은 이제 쓰지 않습니다. 거기 적으신 내용은 배정에 반영되지 않으니');
-      lines.push('   [달력] 탭으로 옮기신 뒤 탭을 지워 주세요.');
+      lines.push('※ 이제 쓰지 않는 탭이 남아 있습니다: ' + stale.join(', '));
+      lines.push('   지우셔도 배정에는 아무 영향이 없습니다.');
     }
 
     var unknown = ceUnknownNames(rot, ex);

@@ -59,14 +59,12 @@ function ceGenerateMonth(year, month) {
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
 
   var sheetName = ceMonthSheetName(year, month);
-  var swaps = ceAppendLog(year, month, grid, sched, cfg);
   ceOrderTabs(sheetName);
 
   return {
     sheetName: sheetName,
     warnings: ceCollectWarnings(grid, sched, cfg),
-    notes: ceFallbackNotes(rot, cfg),
-    swaps: swaps.map(function (r) { return r[0] + ' ' + r[2] + ' : ' + r[3]; })
+    notes: ceFallbackNotes(rot, cfg)
   };
 }
 

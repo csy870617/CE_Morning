@@ -6,8 +6,7 @@ var CE_TAB = {
   SETTINGS: '설정',
   ROTATION: '로테이션',
   CALENDAR: '달력(예외자)',
-  STORE: '_달력저장',
-  LOG: '_기록'
+  STORE: '_달력저장'
 };
 
 /** 예전에 쓰던 탭 이름. 열어 보고 있으면 새 이름으로 바꿔 줍니다. */

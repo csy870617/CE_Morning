@@ -6,7 +6,7 @@ const path = require('path');
 const vm = require('vm');
 const { makeContext } = require('./fakeSheets');
 
-const FILES = ['Rotation.gs', 'Sheets.gs', 'Calendar.gs', 'Render.gs', 'Log.gs', 'Setup.gs', 'Menu.gs'];
+const FILES = ['Rotation.gs', 'Sheets.gs', 'Calendar.gs', 'Render.gs', 'Setup.gs', 'Menu.gs'];
 
 function load() {
   const { ss, globals } = makeContext();
@@ -408,80 +408,26 @@ test('달이 여러 개면 최근 달이 앞에, 방금 만든 달이 맨 앞에
     ['2026-10', '2026-11', '2026-09', '달력(예외자)', '로테이션', '설정']);
 });
 
-test('기록이 달을 거듭하며 쌓인다', () => {
-  const { ctx, ss } = prepared({
-    '설교': ['김목사', '이목사'], '방송': ['정집사'],
-    '수요현관': ['오권사'], '토요찬양': ['서집사']
-  });
-  ctx.ceGenerateMonth(2026, 9);
-  const log = ss.getSheetByName('_기록');
-  assert.ok(log, '_기록 탭이 있어야 한다');
-  assert.ok(log.hidden, '기록 탭은 숨겨져 있어야 한다');
-
-  const after9 = ctx.ceReadLog();
-  assert.ok(after9.length > 0);
-  assert.ok(after9.every(r => String(r[0]).indexOf('2026-09') === 0), '9월 기록만 있어야 한다');
-
-  ctx.ceGenerateMonth(2026, 10);
-  const after10 = ctx.ceReadLog();
-  const sep = after10.filter(r => String(r[0]).indexOf('2026-09') === 0);
-  const oct = after10.filter(r => String(r[0]).indexOf('2026-10') === 0);
-  assert.strictEqual(sep.length, after9.length, '9월 기록이 그대로 남아 있어야 한다');
-  assert.ok(oct.length > 0, '10월 기록이 더해져야 한다');
-});
-
-test('같은 달을 다시 돌리면 그 달 기록만 갈아 끼운다', () => {
+test('쓰지 않는 기록 탭을 만들지 않는다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
-  ctx.ceGenerateMonth(2026, 10);
-  const before = ctx.ceReadLog().length;
-
-  ctx.ceGenerateMonth(2026, 9);
-  const after = ctx.ceReadLog();
-  assert.strictEqual(after.length, before, '줄이 두 배로 늘면 안 된다');
-  assert.ok(after.some(r => String(r[0]).indexOf('2026-10') === 0), '10월 기록은 남아 있어야 한다');
-  void ss;
+  assert.strictEqual(ss.getSheetByName('_기록'), null, '기록 탭은 더 이상 만들지 않는다');
+  assert.deepStrictEqual(plain(ss.visibleNames()), ['2026-09', '달력(예외자)', '로테이션', '설정']);
 });
 
-test('맞바꾼 자리가 기록과 알림에 남는다', () => {
-  // 설교 명단과 방송 명단에 같은 사람이 있어 겹침이 생기는 구성
-  const { ctx, ss } = prepared({
-    '설교': ['김목사', '이목사'], '방송': ['김목사', '정집사', '한집사']
-  });
-  const out = ctx.ceGenerateMonth(2026, 9);
-  assert.ok(out.swaps.length > 0, '교대 안내가 있어야 한다');
-
-  const swapRows = ctx.ceReadLog().filter(r => String(r[4]).indexOf('교대') === 0);
-  assert.ok(swapRows.length > 0, '기록에 교대 줄이 있어야 한다');
-  assert.strictEqual(String(swapRows[0][2]), '방송실');
-  assert.ok(String(swapRows[0][4]).indexOf('맞바꿈') >= 0, swapRows[0][4]);
-  void ss;
-});
-
-test('기록에 대타 줄은 생기지 않는다', () => {
-  const { ctx } = prepared({ '설교': ['김목사'], '방송': ['김목사', '정집사'] });
-  ctx.ceGenerateMonth(2026, 9);
-  const log = ctx.ceReadLog();
-  assert.ok(log.every(r => String(r[4]).indexOf('대타') < 0), '대타 줄이 있으면 안 된다');
-  // 사람을 데려오는 대신 그대로 두고 확인 필요로 남긴다
-  const flagged = log.filter(r => String(r[4]).indexOf('확인 필요') === 0);
-  assert.ok(flagged.length > 0, '바꿀 상대가 없는 날은 확인 필요로 남아야 한다');
-});
-
-test('기록에는 그 달 날짜만 들어간다 (앞뒤 달 칸 제외)', () => {
-  const { ctx } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
-  ctx.ceGenerateMonth(2026, 9);
-  const log = ctx.ceReadLog();
-  assert.ok(log.every(r => String(r[0]).indexOf('2026-09') === 0),
-    '8/31 이나 10/1 같은 날짜가 들어가면 안 된다');
-});
-
-test('기록 보기를 누르면 탭이 펼쳐진다', () => {
+test('달력에 적은 예외는 여전히 달을 바꿔도 남는다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
-  ctx.ceGenerateMonth(2026, 9);
-  assert.strictEqual(ss.getSheetByName('_기록').hidden, true);
-  ctx.ceShowLog();
-  assert.strictEqual(ss.getSheetByName('_기록').hidden, false);
+  ctx.ceRenderCalendar(2026, 9);
+  const cal = ss.getSheetByName('달력(예외자)');
+  let col = 0;
+  for (let c = 1; c <= 7; c++) if (String(cal._get(4, c)) === '1') col = c;
+  cal._set(5, col, '김목사');
+
+  ctx.ceRenderCalendar(2026, 10);
+  ctx.ceRenderCalendar(2026, 9);
+  let back = 0;
+  for (let c = 1; c <= 7; c++) if (String(cal._get(4, c)) === '1') back = c;
+  assert.strictEqual(String(cal._get(5, back)), '김목사');
 });
 
 console.log('\n' + passed + ' passed');
