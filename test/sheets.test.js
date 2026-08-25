@@ -6,7 +6,7 @@ const path = require('path');
 const vm = require('vm');
 const { makeContext } = require('./fakeSheets');
 
-const FILES = ['Rotation.gs', 'Sheets.gs', 'Calendar.gs', 'Render.gs', 'Setup.gs', 'Menu.gs'];
+const FILES = ['Rotation.gs', 'Sheets.gs', 'Calendar.gs', 'Render.gs', 'Log.gs', 'Setup.gs', 'Menu.gs'];
 
 function load() {
   const { ss, globals } = makeContext();
@@ -60,7 +60,7 @@ function readRow(sheet, base, offset) {
 test('초기 설정이 필요한 탭과 열을 모두 만든다', () => {
   const { ctx, ss } = load();
   ctx.ceSetupAll();
-  ['설정', '로테이션', '달력'].forEach(n => assert.ok(ss.getSheetByName(n), n + ' 탭이 없다'));
+  ['설정', '로테이션', '달력(예외자)'].forEach(n => assert.ok(ss.getSheetByName(n), n + ' 탭이 없다'));
   const rot = ss.getSheetByName('로테이션');
   const headers = rot.getRange(1, 1, 1, rot.getLastColumn()).getValues()[0];
   ['설교', '방송', '토요설교', '토요방송', '수요현관', '토요찬양']
@@ -231,7 +231,7 @@ test('달력에 적은 휴가가 배정에 반영된다', () => {
   ctx.ceRenderCalendar(2026, 9);
 
   // 9/1 은 화요일 -> 첫 주(8/30~9/5) 이름 줄에서 화요일 칸
-  const cal = ss.getSheetByName('달력');
+  const cal = ss.getSheetByName('달력(예외자)');
   const dateRow = 4;
   let col = 0;
   for (let c = 1; c <= 7; c++) if (String(cal._get(dateRow, c)) === '1') col = c;
@@ -251,7 +251,7 @@ test("달력에 '휴일' 을 적으면 그 날 칸이 비고 순번이 유지된
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사', '박전도사'], '방송': ['정집사'] });
   ctx.ceRenderCalendar(2026, 9);
 
-  const cal = ss.getSheetByName('달력');
+  const cal = ss.getSheetByName('달력(예외자)');
   let col = 0;
   for (let c = 1; c <= 7; c++) if (String(cal._get(4, c)) === '1') col = c;
   cal._set(5, col, '휴일');
@@ -269,7 +269,7 @@ test('달을 바꿔 다시 그려도 달력에 적은 내용이 남는다', () =
   const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
   ctx.ceRenderCalendar(2026, 9);
 
-  const cal = ss.getSheetByName('달력');
+  const cal = ss.getSheetByName('달력(예외자)');
   let col = 0;
   for (let c = 1; c <= 7; c++) if (String(cal._get(4, c)) === '1') col = c;
   cal._set(5, col, '김목사');
@@ -374,6 +374,104 @@ test("새벽예배 요일에 '토' 가 없으면 그 이유를 알려 준다", (
   assert.strictEqual(String(sh.getRange(5, 7).getValue()), '', '토요일 방송실 칸');
   // 토요찬양은 새벽예배와 무관하므로 그대로 들어간다
   assert.strictEqual(String(sh.getRange(6, 7).getValue()), '서집사');
+});
+
+
+/* ---------- 탭 이름·순서, 누적 기록 ---------- */
+
+test("예전 '달력' 탭은 '달력(예외자)' 로 이름이 바뀐다", () => {
+  const { ctx, ss } = load();
+  const old = ss.insertSheet('달력');
+  old._set(1, 1, '연월');
+  old._set(1, 2, '2026-09');
+
+  const renamed = ctx.ceRenameLegacyTabs();
+  assert.deepStrictEqual(plain(renamed), ['달력 → 달력(예외자)']);
+  assert.ok(ss.getSheetByName('달력(예외자)'), '새 이름 탭이 있어야 한다');
+  assert.strictEqual(ss.getSheetByName('달력'), null);
+  assert.strictEqual(String(old._get(1, 2)), '2026-09', '내용은 그대로여야 한다');
+});
+
+test('탭 순서가 표 → 달력(예외자) → 로테이션 → 설정 이 된다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  assert.deepStrictEqual(plain(ss.visibleNames()),
+    ['2026-09', '달력(예외자)', '로테이션', '설정']);
+});
+
+test('달이 여러 개면 최근 달이 앞에, 방금 만든 달이 맨 앞에 온다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  ctx.ceGenerateMonth(2026, 11);
+  ctx.ceGenerateMonth(2026, 10);        // 마지막으로 만든 것이 맨 앞
+  assert.deepStrictEqual(plain(ss.visibleNames()),
+    ['2026-10', '2026-11', '2026-09', '달력(예외자)', '로테이션', '설정']);
+});
+
+test('기록이 달을 거듭하며 쌓인다', () => {
+  const { ctx, ss } = prepared({
+    '설교': ['김목사', '이목사'], '방송': ['정집사'],
+    '수요현관': ['오권사'], '토요찬양': ['서집사']
+  });
+  ctx.ceGenerateMonth(2026, 9);
+  const log = ss.getSheetByName('_기록');
+  assert.ok(log, '_기록 탭이 있어야 한다');
+  assert.ok(log.hidden, '기록 탭은 숨겨져 있어야 한다');
+
+  const after9 = ctx.ceReadLog();
+  assert.ok(after9.length > 0);
+  assert.ok(after9.every(r => String(r[0]).indexOf('2026-09') === 0), '9월 기록만 있어야 한다');
+
+  ctx.ceGenerateMonth(2026, 10);
+  const after10 = ctx.ceReadLog();
+  const sep = after10.filter(r => String(r[0]).indexOf('2026-09') === 0);
+  const oct = after10.filter(r => String(r[0]).indexOf('2026-10') === 0);
+  assert.strictEqual(sep.length, after9.length, '9월 기록이 그대로 남아 있어야 한다');
+  assert.ok(oct.length > 0, '10월 기록이 더해져야 한다');
+});
+
+test('같은 달을 다시 돌리면 그 달 기록만 갈아 끼운다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  ctx.ceGenerateMonth(2026, 10);
+  const before = ctx.ceReadLog().length;
+
+  ctx.ceGenerateMonth(2026, 9);
+  const after = ctx.ceReadLog();
+  assert.strictEqual(after.length, before, '줄이 두 배로 늘면 안 된다');
+  assert.ok(after.some(r => String(r[0]).indexOf('2026-10') === 0), '10월 기록은 남아 있어야 한다');
+  void ss;
+});
+
+test('대타로 세운 자리가 기록과 알림에 남는다', () => {
+  // 설교 명단과 방송 명단이 한 사람으로 겹쳐 매일 충돌 -> 맞바꿀 상대가 없어 대타
+  const { ctx, ss } = prepared({
+    '설교': ['김목사'], '방송': ['김목사', '정집사']
+  });
+  const out = ctx.ceGenerateMonth(2026, 9);
+  assert.ok(out.substitutes.length > 0, '대타 안내가 있어야 한다');
+  assert.ok(out.substitutes[0].indexOf('다음 순서자') >= 0, out.substitutes[0]);
+
+  const subs = ctx.ceReadLog().filter(r => String(r[4]).indexOf('대타') === 0);
+  assert.ok(subs.length > 0, '기록에 대타 줄이 있어야 한다');
+  assert.strictEqual(String(subs[0][2]), '방송실');
+  void ss;
+});
+
+test('기록에는 그 달 날짜만 들어간다 (앞뒤 달 칸 제외)', () => {
+  const { ctx } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  const log = ctx.ceReadLog();
+  assert.ok(log.every(r => String(r[0]).indexOf('2026-09') === 0),
+    '8/31 이나 10/1 같은 날짜가 들어가면 안 된다');
+});
+
+test('기록 보기를 누르면 탭이 펼쳐진다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  assert.strictEqual(ss.getSheetByName('_기록').hidden, true);
+  ctx.ceShowLog();
+  assert.strictEqual(ss.getSheetByName('_기록').hidden, false);
 });
 
 console.log('\n' + passed + ' passed');

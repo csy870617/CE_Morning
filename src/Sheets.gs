@@ -5,9 +5,73 @@
 var CE_TAB = {
   SETTINGS: '설정',
   ROTATION: '로테이션',
-  CALENDAR: '달력',
-  STORE: '_달력저장'
+  CALENDAR: '달력(예외자)',
+  STORE: '_달력저장',
+  LOG: '_기록'
 };
+
+/** 예전에 쓰던 탭 이름. 열어 보고 있으면 새 이름으로 바꿔 줍니다. */
+var CE_LEGACY_TAB_NAMES = [
+  { from: '달력', to: '달력(예외자)' }
+];
+
+/** 화면에 보이는 탭 순서 (월별 표는 이 앞에 옵니다). */
+var CE_TAB_ORDER = ['달력(예외자)', '로테이션', '설정'];
+
+function ceRenameLegacyTabs() {
+  var ss = ceSS();
+  var renamed = [];
+  for (var i = 0; i < CE_LEGACY_TAB_NAMES.length; i++) {
+    var pair = CE_LEGACY_TAB_NAMES[i];
+    var old = ss.getSheetByName(pair.from);
+    if (old && !ss.getSheetByName(pair.to)) {
+      old.setName(pair.to);
+      renamed.push(pair.from + ' → ' + pair.to);
+    }
+  }
+  return renamed;
+}
+
+/** 월별 표 시트인지 ('2026-09' 모양) */
+function ceIsMonthSheetName(name) {
+  return /^\d{4}-\d{2}$/.test(String(name));
+}
+
+/**
+ * 탭 순서를 맞춥니다.
+ *   방금 만든 표 → 나머지 월별 표(최근 달 먼저) → 달력(예외자) → 로테이션 → 설정
+ * 숨긴 탭은 건드리지 않습니다.
+ */
+function ceOrderTabs(frontSheetName) {
+  var ss = ceSS();
+  var names = [];
+
+  if (frontSheetName && ss.getSheetByName(frontSheetName)) names.push(frontSheetName);
+
+  var months = [];
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var n = sheets[i].getName();
+    if (ceIsMonthSheetName(n) && n !== frontSheetName) months.push(n);
+  }
+  months.sort();
+  months.reverse();
+  names = names.concat(months);
+
+  for (var t = 0; t < CE_TAB_ORDER.length; t++) {
+    if (ss.getSheetByName(CE_TAB_ORDER[t])) names.push(CE_TAB_ORDER[t]);
+  }
+
+  var pos = 1;
+  for (var k = 0; k < names.length; k++) {
+    var sh = ss.getSheetByName(names[k]);
+    if (!sh || sh.isSheetHidden()) continue;
+    ss.setActiveSheet(sh);
+    ss.moveActiveSheet(pos);
+    pos++;
+  }
+  return names;
+}
 
 var CE_COLOR = {
   TITLE_BG: '#434343',
@@ -15,6 +79,7 @@ var CE_COLOR = {
   BAND_BG: '#efefef',
   WARN_BG: '#f4cccc',
   HOLIDAY_BG: '#fff2cc',
+  SUB_BG: '#d9ead3',
   OUT_OF_MONTH: '#999999',
   BORDER: '#b7b7b7'
 };

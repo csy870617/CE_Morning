@@ -20,6 +20,7 @@ var CE_SETTING_ROWS = [
 function ceSetupAll() {
   var created = [];
   var updated = [];
+  var renamed = ceRenameLegacyTabs();
 
   if (ceSetupSettings()) created.push(CE_TAB.SETTINGS);
   else if (ceUpgradeSettings().length) updated.push(CE_TAB.SETTINGS);
@@ -35,7 +36,8 @@ function ceSetupAll() {
     ceRenderCalendar(today.getFullYear(), today.getMonth() + 1);
     created.push(CE_TAB.CALENDAR);
   }
-  return { created: created, updated: updated };
+  ceOrderTabs(null);
+  return { created: created, updated: updated, renamed: renamed };
 }
 
 /** 이미 있는 설정 탭에 빠진 항목만 아래에 덧붙입니다. */

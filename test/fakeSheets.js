@@ -27,6 +27,12 @@ function makeRange(sheet, row, col, numRows, numCols) {
       return r;
     },
     setNote(v) { sheet.notes.set(`${row},${col}`, v); return r; },
+    clearContent() {
+      for (let i = 0; i < numRows; i++) {
+        for (let j = 0; j < numCols; j++) sheet._set(row + i, col + j, '');
+      }
+      return r;
+    },
     merge() {
       if (numRows === 1 && numCols === 1) return r;
       sheet.merges.push({ row, col, numRows, numCols });
@@ -50,7 +56,10 @@ function makeSheet(name) {
     _key: (row, col) => `${row},${col}`,
     _get(row, col) { const v = sheet.cells.get(sheet._key(row, col)); return v === undefined ? '' : v; },
     _set(row, col, v) { sheet.cells.set(sheet._key(row, col), v === undefined || v === null ? '' : v); },
-    getName: () => name,
+    getName: () => sheet.name,
+    setName(n) { sheet.name = n; return sheet; },
+    isSheetHidden: () => sheet.hidden,
+    showSheet() { sheet.hidden = false; return sheet; },
     getMaxRows: () => 1000,
     getMaxColumns: () => 26,
     getLastRow() {
@@ -94,12 +103,24 @@ function makeSheet(name) {
 
 function makeSpreadsheet() {
   const sheets = [];
+  let active = null;
   return {
     sheets,
     getSpreadsheetTimeZone: () => 'America/Los_Angeles',
+    getSheets: () => sheets.slice(),
     getSheetByName: n => sheets.filter(s => s.name === n)[0] || null,
     insertSheet(n) { const s = makeSheet(n); sheets.push(s); return s; },
-    setActiveSheet: s => s
+    setActiveSheet(s) { active = s; return s; },
+    getActiveSheet: () => active,
+    moveActiveSheet(pos) {
+      if (!active) return;
+      const i = sheets.indexOf(active);
+      if (i < 0) return;
+      sheets.splice(i, 1);
+      sheets.splice(Math.max(0, Math.min(sheets.length, pos - 1)), 0, active);
+    },
+    /** 테스트에서 보이는 탭 순서를 확인할 때 씁니다. */
+    visibleNames: () => sheets.filter(s => !s.hidden).map(s => s.name)
   };
 }
 

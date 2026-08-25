@@ -407,7 +407,7 @@ test('방송실 교대는 같은 명단 안에서만 일어난다', () => {
   s.dawnDays.filter(d => d.dow !== 6).forEach(d => {
     assert.ok(['ㄱ', 'ㄴ'].indexOf(d.broadcast) >= 0, d.iso + ' : ' + d.broadcast);
   });
-  assert.strictEqual(s.byIso['2026-09-05'].swapNote, '2026-09-12 과 교대');
+  assert.strictEqual(s.byIso['2026-09-05'].swapNote, '2026-09-12 과 맞바꿈');
 });
 
 test('토요 방송 명단이 한 명뿐이라 바꿀 상대가 없으면 경고가 남는다', () => {
@@ -466,7 +466,7 @@ test('수요현관이 그날 설교자와 겹치면 다음 주와 맞바꾼다',
   assert.strictEqual(s.byIso['2026-09-09'].preacher, 'ㄴ', '9/9 에는 겹치지 않아야 옮길 수 있다');
   assert.strictEqual(s.byIso['2026-09-02'].door, '윤');
   assert.strictEqual(s.byIso['2026-09-09'].door, '오');
-  assert.strictEqual(s.byIso['2026-09-02'].specialSwapNote, '2026-09-09 과 교대');
+  assert.strictEqual(s.byIso['2026-09-02'].specialSwapNote, '2026-09-09 과 맞바꿈');
 });
 
 test('수요현관이 그날 방송실과 겹쳐도 다음 주와 맞바꾼다', () => {
@@ -494,7 +494,7 @@ test('토요찬양이 그날 토요설교와 겹치면 다음 토요일과 맞�
   assert.strictEqual(s.byIso['2026-09-12'].preacher, '조');
   assert.strictEqual(s.byIso['2026-09-05'].praise, '서');   // 겹쳐서 밀림
   assert.strictEqual(s.byIso['2026-09-12'].praise, '강');
-  assert.strictEqual(s.byIso['2026-09-12'].specialSwapNote, '2026-09-05 과 교대');
+  assert.strictEqual(s.byIso['2026-09-12'].specialSwapNote, '2026-09-05 과 맞바꿈');
 });
 
 test('겹치지 않으면 그냥 순서대로 둔다', () => {
@@ -562,6 +562,68 @@ test('수요현관 교대가 토요찬양 순번을 건드리지 않는다', () 
   const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-12');
   assert.strictEqual(s.byIso['2026-09-05'].praise, '서');
   assert.strictEqual(s.byIso['2026-09-12'].praise, '표');
+});
+
+/* ---------- 바꿀 상대가 없으면 다음 순서자를 대타로 ---------- */
+
+test('맞바꿀 상대가 없으면 방송 명단의 다음 순서자를 세운다', () => {
+  const days = [{ iso: '2026-09-01', preacher: '가', broadcast: '가', bcGroup: 'broadcast' }];
+  R.ceResolveConflicts(days, [], { broadcast: ['가', '나', '다'] });
+  assert.strictEqual(days[0].broadcast, '나');
+  assert.strictEqual(days[0].substitute, true);
+  assert.ok(days[0].swapNote.indexOf('다음 순서자') >= 0);
+  assert.ok(!days[0].warning);
+});
+
+test('대타도 그날 설교자면 그 다음 사람을 찾는다', () => {
+  const days = [{ iso: '2026-09-01', preacher: '나', broadcast: '나', bcGroup: 'broadcast' }];
+  R.ceResolveConflicts(days, [], { broadcast: ['가', '나', '다'] });
+  assert.strictEqual(days[0].broadcast, '다');
+});
+
+test('대타가 그날 휴가면 건너뛴다', () => {
+  const days = [{ iso: '2026-09-01', preacher: '가', broadcast: '가', bcGroup: 'broadcast' }];
+  const ex = [{ name: '나', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL }];
+  R.ceResolveConflicts(days, ex, { broadcast: ['가', '나', '다'] });
+  assert.strictEqual(days[0].broadcast, '다');
+});
+
+test('대타로 세울 사람도 없으면 그때는 경고를 남긴다', () => {
+  const days = [{ iso: '2026-09-01', preacher: '나', broadcast: '나', bcGroup: 'broadcast' }];
+  R.ceResolveConflicts(days, [], { broadcast: ['가', '나'] });
+  // '가' 는 대타가 될 수 있다
+  assert.strictEqual(days[0].broadcast, '가');
+
+  const days2 = [{ iso: '2026-09-01', preacher: '나', broadcast: '나', bcGroup: 'broadcast' }];
+  R.ceResolveConflicts(days2, [], { broadcast: ['나'] });
+  assert.strictEqual(days2[0].broadcast, '나');
+  assert.ok(days2[0].warning);
+});
+
+test('넷째 줄도 상대가 없으면 다음 순서자를 대타로 세운다', () => {
+  const days = [{ iso: '2026-09-02', door: '오' }];
+  const dawn = { '2026-09-02': { preacher: '오', broadcast: 'ㄱ' } };
+  R.ceResolveSpecialConflicts(days, 'door', R.CE_ROLE.DOOR, dawn, [], '수요현관', ['오', '윤', '서']);
+  assert.strictEqual(days[0].door, '윤');
+  assert.strictEqual(days[0].substitute, true);
+});
+
+test('넷째 줄 대타는 그날 방송실도 피한다', () => {
+  const days = [{ iso: '2026-09-02', door: '오' }];
+  const dawn = { '2026-09-02': { preacher: '오', broadcast: '윤' } };
+  R.ceResolveSpecialConflicts(days, 'door', R.CE_ROLE.DOOR, dawn, [], '수요현관', ['오', '윤', '서']);
+  assert.strictEqual(days[0].door, '서');
+});
+
+test('맞바꾸기가 되면 대타는 쓰지 않는다', () => {
+  const days = [
+    { iso: '2026-09-01', preacher: '가', broadcast: '가', bcGroup: 'broadcast' },
+    { iso: '2026-09-02', preacher: '나', broadcast: '다', bcGroup: 'broadcast' }
+  ];
+  R.ceResolveConflicts(days, [], { broadcast: ['가', '나', '다'] });
+  assert.strictEqual(days[0].broadcast, '다');
+  assert.strictEqual(days[1].broadcast, '가');
+  assert.ok(!days[0].substitute, '교대로 풀렸으면 대타 표시가 없어야 한다');
 });
 
 console.log('\n' + passed + ' passed');

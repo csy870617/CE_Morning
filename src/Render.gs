@@ -46,6 +46,7 @@ function ceMonthSheetName(year, month) {
  * 저장된 순번 없이 기준일부터 매번 새로 계산하므로, 몇 번을 돌려도 결과가 같습니다.
  */
 function ceGenerateMonth(year, month) {
+  ceRenameLegacyTabs();           // 예전 이름의 탭이 있으면 먼저 바꿔 둡니다
   ceSaveCalendar();               // 달력에 적어만 두고 저장 안 한 내용까지 반영
 
   var cfg = ceReadConfig();
@@ -62,11 +63,17 @@ function ceGenerateMonth(year, month) {
   var sched = ceBuildSchedule(cfg, rot, ex, grid.endIso);
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
 
-  var notes = ceFallbackNotes(rot, cfg);
+  var sheetName = ceMonthSheetName(year, month);
+  var substitutes = ceAppendLog(year, month, grid, sched, cfg);
+  ceOrderTabs(sheetName);
+
   return {
-    sheetName: ceMonthSheetName(year, month),
+    sheetName: sheetName,
     warnings: ceCollectWarnings(grid, sched, cfg),
-    notes: notes
+    notes: ceFallbackNotes(rot, cfg),
+    substitutes: substitutes.map(function (r) {
+      return r[0] + ' ' + r[2] + ' : ' + r[3] + ' (다음 순서자)';
+    })
   };
 }
 
@@ -237,12 +244,14 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
 
       if (info.swapNote) {
         sh.getRange(base + 2, col).setNote('설교자와 겹쳐서 ' + info.swapNote);
+        if (info.substitute) sh.getRange(base + 2, col).setBackground(CE_COLOR.SUB_BG);
       }
       if (info.warning) {
         sh.getRange(base + 2, col).setBackground(CE_COLOR.WARN_BG).setNote(info.warning);
       }
       if (special.swapNote) {
         sh.getRange(base + 3, col).setNote('설교자·방송실과 겹쳐서 ' + special.swapNote);
+        if (info.specialSubstitute) sh.getRange(base + 3, col).setBackground(CE_COLOR.SUB_BG);
       }
       if (special.warning) {
         sh.getRange(base + 3, col).setBackground(CE_COLOR.WARN_BG).setNote(special.warning);

@@ -12,6 +12,7 @@ function onOpen() {
     .addItem('④ 다른 달 배정하기…', 'ceMenuGeneratePickMonth')
     .addSeparator()
     .addItem('명단·예외 점검', 'ceMenuCheck')
+    .addItem('배정 기록 보기', 'ceMenuShowLog')
     .addToUi();
 }
 
@@ -20,6 +21,7 @@ function ceMenuSetup() {
   try {
     var res = ceSetupAll();
     var msg = [];
+    if (res.renamed.length) msg.push('이름을 바꾼 탭: ' + res.renamed.join(', '));
     if (res.created.length) msg.push('만든 탭: ' + res.created.join(', '));
     if (res.updated.length) msg.push('보완한 탭: ' + res.updated.join(', '));
     if (!msg.length) msg.push('필요한 탭이 이미 모두 있습니다.');
@@ -80,6 +82,11 @@ function ceRunGenerate(year, month) {
     if (sh) ceSS().setActiveSheet(sh);
 
     var msg = ['[' + out.sheetName + '] 배정을 마쳤습니다.'];
+    if (out.substitutes.length) {
+      msg.push('');
+      msg.push('겹침 때문에 다음 순서자를 대신 세운 자리 (연두색):');
+      msg.push(out.substitutes.join('\n'));
+    }
     if (out.notes.length) {
       msg.push('');
       msg.push(out.notes.join('\n'));
@@ -93,6 +100,19 @@ function ceRunGenerate(year, month) {
   } catch (e) {
     ui.alert('오류: ' + e.message);
   }
+}
+
+function ceMenuShowLog() {
+  var ui = SpreadsheetApp.getUi();
+  var sh = ceShowLog();
+  if (!sh) {
+    ui.alert('아직 기록이 없습니다. 한 번이라도 배정을 돌리면 쌓이기 시작합니다.');
+    return;
+  }
+  ui.alert('[' + CE_TAB.LOG + '] 탭을 펼쳤습니다.\n\n' +
+    '배정을 돌릴 때마다 그 달의 결과가 여기 쌓입니다. 같은 달을 다시 돌리면\n' +
+    '그 달 기록만 새로 갈아 끼우고 다른 달은 그대로 둡니다.\n\n' +
+    '다 보신 뒤에는 탭을 마우스 오른쪽 클릭 → [시트 숨기기] 하시면 됩니다.');
 }
 
 function ceMenuCheck() {

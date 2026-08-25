@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ORDER = ['Rotation.gs', 'Sheets.gs', 'Calendar.gs', 'Render.gs', 'Setup.gs', 'Menu.gs'];
+const ORDER = ['Rotation.gs', 'Sheets.gs', 'Calendar.gs', 'Render.gs', 'Log.gs', 'Setup.gs', 'Menu.gs'];
 const root = path.join(__dirname, '..');
 const parts = ORDER.map(f => {
   const body = fs.readFileSync(path.join(root, 'src', f), 'utf8');
