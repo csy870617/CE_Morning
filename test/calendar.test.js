@@ -69,14 +69,6 @@ test('이름 칸: 비어 있으면 빈 배열', () => {
   assert.deepStrictEqual(plain(ctx.ceParseNameCell(null)), []);
 });
 
-test('이름 칸: 적었다 읽었다 해도 그대로다', () => {
-  const entries = [
-    { name: '홍길동', role: ctx.CE_ROLE.ALL },
-    { name: '김집사', role: ctx.CE_ROLE.BROADCAST }
-  ];
-  assert.deepStrictEqual(plain(ctx.ceParseNameCell(ctx.ceFormatNameCell(entries))), entries);
-});
-
 test('이름 칸에 여러 명을 적으면 전부 읽힌다', () => {
   const out = plain(ctx.ceParseNameCell('이목사, 박전도사, 최목사(방송)'));
   assert.deepStrictEqual(out.map(e => e.name), ['이목사', '박전도사', '최목사']);
@@ -101,11 +93,6 @@ test("'휴일' 과 사람 이름을 같이 적어도 각각 읽힌다", () => {
   assert.deepStrictEqual(out.map(e => e.name), ['휴일', '홍길동']);
   assert.strictEqual(ctx.ceIsHolidayName(out[0].name), true);
   assert.strictEqual(ctx.ceIsHolidayName(out[1].name), false);
-});
-
-test("'휴일' 도 적었다 읽었다 해도 그대로다", () => {
-  const entries = [{ name: '휴일', role: ctx.CE_ROLE.BROADCAST }];
-  assert.deepStrictEqual(plain(ctx.ceParseNameCell(ctx.ceFormatNameCell(entries))), entries);
 });
 
 test('연월 파싱', () => {

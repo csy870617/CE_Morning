@@ -5,8 +5,7 @@
 var CE_TAB = {
   SETTINGS: '설정',
   ROTATION: '로테이션',
-  CALENDAR: '달력(예외자)',
-  STORE: '_달력저장'
+  CALENDAR: '달력(예외자)'
 };
 
 /** 예전에 쓰던 탭 이름. 열어 보고 있으면 새 이름으로 바꿔 줍니다. */
@@ -246,43 +245,7 @@ function ceReadRotations() {
 /* 예외 - 달력 탭에 적어 둔 휴가·휴일                                   */
 /* ------------------------------------------------------------------ */
 
-/** 숨김 시트에 쌓아 둔 하루짜리 예외를 읽습니다. */
-function ceReadStoredExceptions() {
-  var sh = ceSheet(CE_TAB.STORE, false);
-  if (!sh || sh.getLastRow() < 2) return [];
-  var values = sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues();
-  var out = [];
-  for (var i = 0; i < values.length; i++) {
-    var iso = ceCellToIso(values[i][0]);
-    var name = String(values[i][1] == null ? '' : values[i][1]).trim();
-    if (!iso || !name) continue;
-    out.push({ name: name, start: iso, end: iso, role: ceNormalizeRole(values[i][2]) });
-  }
-  return out;
-}
-
-/** 숨김 시트를 통째로 다시 씁니다. */
-function ceWriteStoredExceptions(entries) {
-  var sh = ceSheet(CE_TAB.STORE, true);
-  sh.clear();
-  sh.getRange(1, 1, 1, 3).setValues([['날짜', '이름', '역할']]).setFontWeight('bold');
-  if (entries.length) {
-    var rows = entries.map(function (e) { return [e.start, e.name, ceRoleLabel(e.role)]; });
-    rows.sort(function (a, b) { return a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0); });
-    sh.getRange(2, 1, rows.length, 3).setValues(rows);
-  }
-  sh.hideSheet();
-}
-
-function ceRoleLabel(role) {
-  if (role === CE_ROLE.SERMON) return '설교';
-  if (role === CE_ROLE.BROADCAST) return '방송';
-  if (role === CE_ROLE.DOOR) return '수요현관';
-  if (role === CE_ROLE.PRAISE) return '토요찬양';
-  return '전체';
-}
-
-/** 예외(휴가·휴일)는 전부 달력 탭에서 옵니다. */
+/** 예외(휴가·휴일)는 전부 달력 탭에 적힌 그대로입니다. */
 function ceReadAllExceptions() {
-  return ceReadStoredExceptions();
+  return ceReadCalendarExceptions();
 }

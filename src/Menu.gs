@@ -43,7 +43,8 @@ function ceMenuRenderCalendar() {
       current = { year: now.getFullYear(), month: now.getMonth() + 1 };
     }
     var res = ui.prompt('달력 다시 그리기',
-      '어느 달을 보시겠습니까?  (예: ' + ceFormatYearMonth(current.year, current.month) + ')',
+      '어느 달을 보시겠습니까?  (예: ' + ceFormatYearMonth(current.year, current.month) + ')\n\n' +
+      '※ 날짜만 새로 나오고 이름 칸은 비워집니다. 지금 적어 두신 내용은 남지 않습니다.',
       ui.ButtonSet.OK_CANCEL);
     if (res.getSelectedButton() !== ui.Button.OK) return;
     var ym = ceParseYearMonth(res.getResponseText());
@@ -99,7 +100,6 @@ function ceRunGenerate(year, month) {
 function ceMenuCheck() {
   var ui = SpreadsheetApp.getUi();
   try {
-    ceSaveCalendar();
     var cfg = ceReadConfig();
     var rot = ceReadRotations();
     var ex = ceReadAllExceptions();
@@ -141,11 +141,14 @@ function ceMenuCheck() {
     lines.push('');
     var holidayCount = 0;
     ex.forEach(function (e) { if (ceIsHolidayName(e.name)) holidayCount++; });
-    lines.push('등록된 예외 ' + (ex.length - holidayCount) + '건, 휴일 ' + holidayCount + '건');
+    var shown = ceCalendarYearMonth();
+    lines.push('달력이 보고 있는 달 : ' + (shown ? ceFormatYearMonth(shown.year, shown.month) : '(없음)'));
+    lines.push('그 달에 적힌 예외 ' + (ex.length - holidayCount) + '건, 휴일 ' + holidayCount + '건');
 
     var stale = [];
     if (ceSS().getSheetByName('장기예외')) stale.push('장기예외');
     if (ceSS().getSheetByName('_기록')) stale.push('_기록');
+    if (ceSS().getSheetByName('_달력저장')) stale.push('_달력저장');
     if (stale.length) {
       lines.push('');
       lines.push('※ 이제 쓰지 않는 탭이 남아 있습니다: ' + stale.join(', '));

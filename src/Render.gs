@@ -42,7 +42,6 @@ function ceMonthSheetName(year, month) {
  */
 function ceGenerateMonth(year, month) {
   ceRenameLegacyTabs();           // 예전 이름의 탭이 있으면 먼저 바꿔 둡니다
-  ceSaveCalendar();               // 달력에 적어만 두고 저장 안 한 내용까지 반영
 
   var cfg = ceReadConfig();
   var rot = ceReadRotations();
@@ -64,7 +63,7 @@ function ceGenerateMonth(year, month) {
   return {
     sheetName: sheetName,
     warnings: ceCollectWarnings(grid, sched, cfg),
-    notes: ceFallbackNotes(rot, cfg)
+    notes: ceFallbackNotes(rot, cfg, year, month)
   };
 }
 
@@ -72,9 +71,20 @@ function ceGenerateMonth(year, month) {
  * 명단이 왜 안 쓰이고 있는지 알려 줍니다.
  * 열 자체를 못 찾은 것과, 열은 있는데 이름이 안 적힌 것을 구분합니다.
  */
-function ceFallbackNotes(rot, cfg) {
+function ceFallbackNotes(rot, cfg, year, month) {
   var cols = rot._columns || {};
   var notes = [];
+
+  // 예외는 지금 달력에 떠 있는 달에서만 읽습니다. 다른 달을 보고 있으면 알려 줍니다.
+  var shown = ceCalendarYearMonth();
+  var want = ceFormatYearMonth(year, month);
+  if (!shown) {
+    notes.push('[' + CE_TAB.CALENDAR + '] 탭이 비어 있어 예외를 하나도 반영하지 못했습니다.');
+  } else if (ceFormatYearMonth(shown.year, shown.month) !== want) {
+    notes.push('[' + CE_TAB.CALENDAR + '] 탭이 ' + ceFormatYearMonth(shown.year, shown.month) +
+      ' 을 보고 있습니다. ' + want + ' 의 예외는 반영되지 않았습니다. ' +
+      '달력을 ' + want + ' 로 다시 그린 뒤 예외를 적고 다시 배정해 주세요.');
+  }
 
   // 토요일이 새벽예배 요일에 없으면 토요일 칸은 아예 비어 있게 됩니다.
   var satMissing = [];
