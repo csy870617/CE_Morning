@@ -173,8 +173,9 @@ function ceResolveConflicts(days, exceptions) {
     for (var j = i + 1; j < days.length; j++) {
       var b = days[j];
       if (!b.broadcast) continue;
-      // 평일과 토요일은 방송 명단이 다르므로 서로 맞바꾸지 않습니다.
-      if ((b.bcGroup || '') !== (a.bcGroup || '')) continue;
+      // 평일끼리, 토요일끼리만 맞바꿉니다.
+      // 금요일에 겹치면 토요일을 건너뛰고 다음 월요일과 바뀝니다.
+      if ((b.swapGroup || '') !== (a.swapGroup || '')) continue;
       if (b.broadcast === a.preacher) continue;                 // 바꿔도 i 일이 그대로 겹침
       if (a.broadcast === b.preacher) continue;                 // j 일에 새 충돌이 생김
       if (!ceIsAvailable(b.broadcast, a.iso, CE_ROLE.BROADCAST, exceptions)) continue;
@@ -188,7 +189,11 @@ function ceResolveConflicts(days, exceptions) {
       done = true;
       break;
     }
-    if (!done) a.warning = '설교자와 방송실이 겹치는데 같은 명단 안에서 바꿀 상대를 찾지 못했습니다';
+    if (!done) {
+      a.warning = a.swapGroup === 'sat'
+        ? '설교자와 방송실이 겹치는데 맞바꿀 토요일을 찾지 못했습니다'
+        : '설교자와 방송실이 겹치는데 맞바꿀 평일을 찾지 못했습니다';
+    }
   }
   return days;
 }
@@ -265,7 +270,10 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
         gapSermon: !offSermon && !preacher && has(sermonKey),
         gapBroadcast: !offBroadcast && !broadcast && has(broadcastKey),
         smGroup: sermonKey,
-        bcGroup: broadcastKey
+        bcGroup: broadcastKey,
+        // 맞바꾸기는 토요일과 평일을 갈라서 봅니다.
+        // 토요 명단을 비워 둬 평일 명단으로 돌더라도 토요일은 토요일끼리만 바꿉니다.
+        swapGroup: satDows.indexOf(dow) >= 0 ? 'sat' : 'week'
       });
     }
 

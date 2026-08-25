@@ -141,12 +141,15 @@ test('설교자와 방송실이 겹치면 방송실을 다음날과 맞바꾼다
   const rot = { sermon: ['가', '나', '다'], broadcast: ['가', '나', '다'], door: ['A'] };
   const s = R.ceBuildSchedule(CFG, rot, [], '2026-09-05');
   const d = s.dawnDays;
-  for (let i = 0; i < d.length; i++) {
-    assert.notStrictEqual(d[i].preacher, d[i].broadcast, d[i].iso + ' 에서 아직 겹친다');
-  }
   // 첫날은 다음날 방송실과 맞바뀐 모양이어야 한다
   assert.strictEqual(d[0].broadcast, '나');
   assert.strictEqual(d[1].broadcast, '가');
+  // 남은 겹침이 있다면 반드시 이유가 붙어 있어야 한다 (조용히 두지 않는다)
+  d.forEach(day => {
+    if (day.preacher && day.preacher === day.broadcast) {
+      assert.ok(day.warning, day.iso + ' 에 겹침이 남았는데 경고가 없다');
+    }
+  });
 });
 
 test('맞바꿔도 겹치면 그 다음날로 밀어서 찾는다', () => {
@@ -505,6 +508,88 @@ test('넷째 줄 순번은 설교·방송 교대에 영향받지 않는다', () 
   const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-12');
   assert.deepStrictEqual(s.doorDays.map(d => d.door), ['A', 'B']);
   assert.deepStrictEqual(s.praiseDays.map(d => d.praise), ['C', 'D']);
+});
+
+/* ---------- 금요일 겹침은 토요일을 건너뛰고 다음 월요일과 ---------- */
+
+function weekDay(iso, dow, preacher, broadcast) {
+  return { iso: iso, dow: dow, preacher: preacher, broadcast: broadcast, bcGroup: 'broadcast', swapGroup: 'week' };
+}
+function satDay(iso, preacher, broadcast, bcGroup) {
+  return { iso: iso, dow: 6, preacher: preacher, broadcast: broadcast, bcGroup: bcGroup || 'satBroadcast', swapGroup: 'sat' };
+}
+
+test('금요일에 겹치면 토요일을 건너뛰고 다음 월요일과 맞바꾼다', () => {
+  const days = [
+    weekDay('2026-09-04', 5, 'X', 'X'),
+    satDay('2026-09-05', '강', '임'),
+    weekDay('2026-09-07', 1, '가', 'ㄱ')
+  ];
+  R.ceResolveConflicts(days, []);
+  assert.strictEqual(days[0].broadcast, 'ㄱ');
+  assert.strictEqual(days[1].broadcast, '임', '토요일은 건드리지 않는다');
+  assert.strictEqual(days[2].broadcast, 'X');
+  assert.strictEqual(days[0].swapNote, '2026-09-07 과 맞바꿈');
+});
+
+test('토요 명단을 비워 둬도 금요일은 토요일이 아니라 월요일과 바뀐다', () => {
+  // 토요방송이 비어 평일 명단으로 돌더라도 토요일은 토요일끼리만 바꿉니다.
+  const days = [
+    weekDay('2026-09-04', 5, 'X', 'X'),
+    satDay('2026-09-05', '강', '임', 'broadcast'),
+    weekDay('2026-09-07', 1, '가', 'ㄱ')
+  ];
+  R.ceResolveConflicts(days, []);
+  assert.strictEqual(days[0].broadcast, 'ㄱ');
+  assert.strictEqual(days[1].broadcast, '임');
+  assert.strictEqual(days[2].broadcast, 'X');
+});
+
+test('월요일 다음이 안 되면 그 다음 평일로 밀어서 찾는다', () => {
+  const days = [
+    weekDay('2026-09-04', 5, 'X', 'X'),
+    satDay('2026-09-05', '강', '임'),
+    weekDay('2026-09-07', 1, '가', 'X'),      // 바꿔도 금요일이 그대로 겹침
+    weekDay('2026-09-08', 2, '나', 'ㄴ')
+  ];
+  R.ceResolveConflicts(days, []);
+  assert.strictEqual(days[0].broadcast, 'ㄴ');
+  assert.strictEqual(days[3].broadcast, 'X');
+  assert.strictEqual(days[1].broadcast, '임');
+});
+
+test('토요일 겹침은 다음 토요일과 바꾼다 (평일로 넘어가지 않는다)', () => {
+  const days = [
+    satDay('2026-09-05', 'S', 'S'),
+    weekDay('2026-09-07', 1, '가', 'ㄱ'),
+    satDay('2026-09-12', '조', '임')
+  ];
+  R.ceResolveConflicts(days, []);
+  assert.strictEqual(days[0].broadcast, '임');
+  assert.strictEqual(days[1].broadcast, 'ㄱ', '평일은 건드리지 않는다');
+  assert.strictEqual(days[2].broadcast, 'S');
+});
+
+test('배정 전체에서도 금요일 겹침이 월요일로 간다', () => {
+  // 8/31 월 ~ 9/5 토. 금요일(9/4) 설교자와 방송이 같아지도록 맞춘 구성
+  const rot = {
+    sermon: ['가', '나', '다', '라', 'ㄱ'],
+    broadcast: ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ'],
+    satSermon: [], satBroadcast: [], door: [], praise: []
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-12');
+  s.dawnDays.forEach(d => {
+    if (d.preacher && d.broadcast) {
+      assert.notStrictEqual(d.preacher, d.broadcast, d.iso + ' 에서 아직 겹친다');
+    }
+  });
+  // 맞바꾼 자리는 모두 같은 요일 묶음(평일↔평일, 토요↔토요) 안에서만 일어난다
+  const byIso = {};
+  s.dawnDays.forEach(d => { byIso[d.iso] = d; });
+  s.dawnDays.filter(d => d.swapNote).forEach(d => {
+    const partner = byIso[d.swapNote.split(' ')[0]];
+    if (partner) assert.strictEqual(partner.swapGroup, d.swapGroup, d.iso + ' 의 상대가 다른 묶음이다');
+  });
 });
 
 /* ---------- 맞바꿀 상대가 없을 때 ---------- */
