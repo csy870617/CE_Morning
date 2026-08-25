@@ -13,7 +13,8 @@ var CE_ROLE = {
   ALL: 'ALL',
   SERMON: 'SERMON',
   BROADCAST: 'BROADCAST',
-  DOOR: 'DOOR'
+  DOOR: 'DOOR',
+  PRAISE: 'PRAISE'
 };
 
 /**
@@ -32,7 +33,9 @@ var CE_ROLE_LABELS = {
   '방송실': CE_ROLE.BROADCAST,
   '수요현관': CE_ROLE.DOOR,
   '현관': CE_ROLE.DOOR,
-  '수요저녁 현관': CE_ROLE.DOOR
+  '수요저녁 현관': CE_ROLE.DOOR,
+  '토요찬양': CE_ROLE.PRAISE,
+  '찬양': CE_ROLE.PRAISE
 };
 
 /* ------------------------------------------------------------------ */
@@ -166,6 +169,8 @@ function ceResolveConflicts(days, exceptions) {
     for (var j = i + 1; j < days.length; j++) {
       var b = days[j];
       if (!b.broadcast) continue;
+      // 평일과 토요일은 방송 명단이 다르므로 서로 맞바꾸지 않습니다.
+      if ((b.bcGroup || '') !== (a.bcGroup || '')) continue;
       if (b.broadcast === a.preacher) continue;                 // 바꿔도 i 일이 그대로 겹침
       if (a.broadcast === b.preacher) continue;                 // j 일에 새 충돌이 생김
       if (!ceIsAvailable(b.broadcast, a.iso, CE_ROLE.BROADCAST, exceptions)) continue;
@@ -179,7 +184,7 @@ function ceResolveConflicts(days, exceptions) {
       done = true;
       break;
     }
-    if (!done) a.warning = '설교자와 방송실이 겹치는데 바꿀 상대를 찾지 못했습니다';
+    if (!done) a.warning = '설교자와 방송실이 겹치는데 같은 명단 안에서 바꿀 상대를 찾지 못했습니다';
   }
   return days;
 }
@@ -201,85 +206,126 @@ function ceResolveConflicts(days, exceptions) {
 function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
   var anchor = ceParseIso(cfg.anchor);
   var ex = exceptions || [];
+  var rot = rotations || {};
 
   var dawnDows = cfg.dawnDows && cfg.dawnDows.length ? cfg.dawnDows : [1, 2, 3, 4, 5, 6];
+  var satDows = cfg.satDows && cfg.satDows.length ? cfg.satDows : [6];
   var doorDows = cfg.doorDows && cfg.doorDows.length ? cfg.doorDows : [3];
+  var praiseDows = cfg.praiseDows && cfg.praiseDows.length ? cfg.praiseDows : [6];
 
   var dawnDays = [];
   var doorDays = [];
-  var sermonPtr = 0;
-  var broadcastPtr = 0;
-  var doorPtr = 0;
+  var praiseDays = [];
+
+  // 명단마다 자기 순번을 따로 갖습니다.
+  var ptr = { sermon: 0, broadcast: 0, satSermon: 0, satBroadcast: 0, door: 0, praise: 0 };
+
+  function has(key) {
+    return rot[key] && rot[key].length > 0;
+  }
+
+  /** 그날 이 역할에 쓸 명단 이름을 고릅니다. 토요 명단이 비어 있으면 평일 명단을 그대로 씁니다. */
+  function groupFor(dow, weekdayKey, satKey) {
+    return (satDows.indexOf(dow) >= 0 && has(satKey)) ? satKey : weekdayKey;
+  }
+
+  function take(key, iso, role) {
+    var picked = cePickNext(rot[key] || [], ptr[key], iso, role, ex);
+    ptr[key] = picked.ptr;
+    return picked.name;
+  }
 
   for (var d = anchor; ceIso(d) <= endIso; d = ceAddDays(d, 1)) {
     var iso = ceIso(d);
     var dow = d.getUTCDay();
 
     if (dawnDows.indexOf(dow) >= 0) {
+      var sermonKey = groupFor(dow, 'sermon', 'satSermon');
+      var broadcastKey = groupFor(dow, 'broadcast', 'satBroadcast');
+
       var offSermon = ceIsHoliday(iso, CE_ROLE.SERMON, ex);
       var offBroadcast = ceIsHoliday(iso, CE_ROLE.BROADCAST, ex);
-      var preacher = '';
-      var broadcast = '';
-      if (!offSermon) {
-        var s = cePickNext(rotations.sermon, sermonPtr, iso, CE_ROLE.SERMON, ex);
-        sermonPtr = s.ptr;
-        preacher = s.name;
-      }
-      if (!offBroadcast) {
-        var b = cePickNext(rotations.broadcast, broadcastPtr, iso, CE_ROLE.BROADCAST, ex);
-        broadcastPtr = b.ptr;
-        broadcast = b.name;
-      }
+
+      var preacher = offSermon ? '' : take(sermonKey, iso, CE_ROLE.SERMON);
+      var broadcast = offBroadcast ? '' : take(broadcastKey, iso, CE_ROLE.BROADCAST);
+
       dawnDays.push({
-        iso: iso, dow: dow, preacher: preacher, broadcast: broadcast,
-        offSermon: offSermon, offBroadcast: offBroadcast
+        iso: iso,
+        dow: dow,
+        preacher: preacher,
+        broadcast: broadcast,
+        offSermon: offSermon,
+        offBroadcast: offBroadcast,
+        // 명단 자체가 비어 있으면 빈칸이 당연하므로 알리지 않습니다.
+        // 명단은 있는데 전원 예외라 못 채운 경우만 표시합니다.
+        gapSermon: !offSermon && !preacher && has(sermonKey),
+        gapBroadcast: !offBroadcast && !broadcast && has(broadcastKey),
+        smGroup: sermonKey,
+        bcGroup: broadcastKey
       });
     }
 
     if (doorDows.indexOf(dow) >= 0) {
       var offDoor = ceIsHoliday(iso, CE_ROLE.DOOR, ex);
-      var doorName = '';
-      if (!offDoor) {
-        var w = cePickNext(rotations.door, doorPtr, iso, CE_ROLE.DOOR, ex);
-        doorPtr = w.ptr;
-        doorName = w.name;
-      }
-      doorDays.push({ iso: iso, dow: dow, door: doorName, offDoor: offDoor });
+      var doorName = offDoor ? '' : take('door', iso, CE_ROLE.DOOR);
+      doorDays.push({
+        iso: iso, dow: dow, door: doorName, offDoor: offDoor,
+        gapDoor: !offDoor && !doorName && has('door')
+      });
+    }
+
+    if (praiseDows.indexOf(dow) >= 0) {
+      var offPraise = ceIsHoliday(iso, CE_ROLE.PRAISE, ex);
+      var praiseName = offPraise ? '' : take('praise', iso, CE_ROLE.PRAISE);
+      praiseDays.push({
+        iso: iso, dow: dow, praise: praiseName, offPraise: offPraise,
+        gapPraise: !offPraise && !praiseName && has('praise')
+      });
     }
   }
 
   ceResolveConflicts(dawnDays, ex);
 
   var byIso = {};
-  var i;
-  for (i = 0; i < dawnDays.length; i++) {
-    var day = dawnDays[i];
-    byIso[day.iso] = {
-      iso: day.iso,
-      preacher: day.preacher,
-      broadcast: day.broadcast,
-      door: '',
-      offSermon: !!day.offSermon,
-      offBroadcast: !!day.offBroadcast,
-      offDoor: false,
-      swapNote: day.swapNote || '',
-      warning: day.warning || ''
-    };
-  }
-  for (i = 0; i < doorDays.length; i++) {
-    var wd = doorDays[i];
-    if (!byIso[wd.iso]) {
-      byIso[wd.iso] = {
-        iso: wd.iso, preacher: '', broadcast: '', door: '',
-        offSermon: false, offBroadcast: false, offDoor: false,
+  function slot(iso) {
+    if (!byIso[iso]) {
+      byIso[iso] = {
+        iso: iso, preacher: '', broadcast: '', door: '', praise: '',
+        offSermon: false, offBroadcast: false, offDoor: false, offPraise: false,
+        gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false,
         swapNote: '', warning: ''
       };
     }
-    byIso[wd.iso].door = wd.door;
-    byIso[wd.iso].offDoor = !!wd.offDoor;
+    return byIso[iso];
   }
 
-  return { byIso: byIso, dawnDays: dawnDays, doorDays: doorDays };
+  var i;
+  for (i = 0; i < dawnDays.length; i++) {
+    var day = dawnDays[i];
+    var cell = slot(day.iso);
+    cell.preacher = day.preacher;
+    cell.broadcast = day.broadcast;
+    cell.offSermon = !!day.offSermon;
+    cell.offBroadcast = !!day.offBroadcast;
+    cell.gapSermon = !!day.gapSermon;
+    cell.gapBroadcast = !!day.gapBroadcast;
+    cell.swapNote = day.swapNote || '';
+    cell.warning = day.warning || '';
+  }
+  for (i = 0; i < doorDays.length; i++) {
+    var wd = doorDays[i];
+    slot(wd.iso).door = wd.door;
+    slot(wd.iso).offDoor = !!wd.offDoor;
+    slot(wd.iso).gapDoor = !!wd.gapDoor;
+  }
+  for (i = 0; i < praiseDays.length; i++) {
+    var pd = praiseDays[i];
+    slot(pd.iso).praise = pd.praise;
+    slot(pd.iso).offPraise = !!pd.offPraise;
+    slot(pd.iso).gapPraise = !!pd.gapPraise;
+  }
+
+  return { byIso: byIso, dawnDays: dawnDays, doorDays: doorDays, praiseDays: praiseDays };
 }
 
 /* ------------------------------------------------------------------ */

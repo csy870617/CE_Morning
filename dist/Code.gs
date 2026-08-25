@@ -17,7 +17,8 @@ var CE_ROLE = {
   ALL: 'ALL',
   SERMON: 'SERMON',
   BROADCAST: 'BROADCAST',
-  DOOR: 'DOOR'
+  DOOR: 'DOOR',
+  PRAISE: 'PRAISE'
 };
 
 /**
@@ -36,7 +37,9 @@ var CE_ROLE_LABELS = {
   '방송실': CE_ROLE.BROADCAST,
   '수요현관': CE_ROLE.DOOR,
   '현관': CE_ROLE.DOOR,
-  '수요저녁 현관': CE_ROLE.DOOR
+  '수요저녁 현관': CE_ROLE.DOOR,
+  '토요찬양': CE_ROLE.PRAISE,
+  '찬양': CE_ROLE.PRAISE
 };
 
 /* ------------------------------------------------------------------ */
@@ -170,6 +173,8 @@ function ceResolveConflicts(days, exceptions) {
     for (var j = i + 1; j < days.length; j++) {
       var b = days[j];
       if (!b.broadcast) continue;
+      // 평일과 토요일은 방송 명단이 다르므로 서로 맞바꾸지 않습니다.
+      if ((b.bcGroup || '') !== (a.bcGroup || '')) continue;
       if (b.broadcast === a.preacher) continue;                 // 바꿔도 i 일이 그대로 겹침
       if (a.broadcast === b.preacher) continue;                 // j 일에 새 충돌이 생김
       if (!ceIsAvailable(b.broadcast, a.iso, CE_ROLE.BROADCAST, exceptions)) continue;
@@ -183,7 +188,7 @@ function ceResolveConflicts(days, exceptions) {
       done = true;
       break;
     }
-    if (!done) a.warning = '설교자와 방송실이 겹치는데 바꿀 상대를 찾지 못했습니다';
+    if (!done) a.warning = '설교자와 방송실이 겹치는데 같은 명단 안에서 바꿀 상대를 찾지 못했습니다';
   }
   return days;
 }
@@ -205,85 +210,126 @@ function ceResolveConflicts(days, exceptions) {
 function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
   var anchor = ceParseIso(cfg.anchor);
   var ex = exceptions || [];
+  var rot = rotations || {};
 
   var dawnDows = cfg.dawnDows && cfg.dawnDows.length ? cfg.dawnDows : [1, 2, 3, 4, 5, 6];
+  var satDows = cfg.satDows && cfg.satDows.length ? cfg.satDows : [6];
   var doorDows = cfg.doorDows && cfg.doorDows.length ? cfg.doorDows : [3];
+  var praiseDows = cfg.praiseDows && cfg.praiseDows.length ? cfg.praiseDows : [6];
 
   var dawnDays = [];
   var doorDays = [];
-  var sermonPtr = 0;
-  var broadcastPtr = 0;
-  var doorPtr = 0;
+  var praiseDays = [];
+
+  // 명단마다 자기 순번을 따로 갖습니다.
+  var ptr = { sermon: 0, broadcast: 0, satSermon: 0, satBroadcast: 0, door: 0, praise: 0 };
+
+  function has(key) {
+    return rot[key] && rot[key].length > 0;
+  }
+
+  /** 그날 이 역할에 쓸 명단 이름을 고릅니다. 토요 명단이 비어 있으면 평일 명단을 그대로 씁니다. */
+  function groupFor(dow, weekdayKey, satKey) {
+    return (satDows.indexOf(dow) >= 0 && has(satKey)) ? satKey : weekdayKey;
+  }
+
+  function take(key, iso, role) {
+    var picked = cePickNext(rot[key] || [], ptr[key], iso, role, ex);
+    ptr[key] = picked.ptr;
+    return picked.name;
+  }
 
   for (var d = anchor; ceIso(d) <= endIso; d = ceAddDays(d, 1)) {
     var iso = ceIso(d);
     var dow = d.getUTCDay();
 
     if (dawnDows.indexOf(dow) >= 0) {
+      var sermonKey = groupFor(dow, 'sermon', 'satSermon');
+      var broadcastKey = groupFor(dow, 'broadcast', 'satBroadcast');
+
       var offSermon = ceIsHoliday(iso, CE_ROLE.SERMON, ex);
       var offBroadcast = ceIsHoliday(iso, CE_ROLE.BROADCAST, ex);
-      var preacher = '';
-      var broadcast = '';
-      if (!offSermon) {
-        var s = cePickNext(rotations.sermon, sermonPtr, iso, CE_ROLE.SERMON, ex);
-        sermonPtr = s.ptr;
-        preacher = s.name;
-      }
-      if (!offBroadcast) {
-        var b = cePickNext(rotations.broadcast, broadcastPtr, iso, CE_ROLE.BROADCAST, ex);
-        broadcastPtr = b.ptr;
-        broadcast = b.name;
-      }
+
+      var preacher = offSermon ? '' : take(sermonKey, iso, CE_ROLE.SERMON);
+      var broadcast = offBroadcast ? '' : take(broadcastKey, iso, CE_ROLE.BROADCAST);
+
       dawnDays.push({
-        iso: iso, dow: dow, preacher: preacher, broadcast: broadcast,
-        offSermon: offSermon, offBroadcast: offBroadcast
+        iso: iso,
+        dow: dow,
+        preacher: preacher,
+        broadcast: broadcast,
+        offSermon: offSermon,
+        offBroadcast: offBroadcast,
+        // 명단 자체가 비어 있으면 빈칸이 당연하므로 알리지 않습니다.
+        // 명단은 있는데 전원 예외라 못 채운 경우만 표시합니다.
+        gapSermon: !offSermon && !preacher && has(sermonKey),
+        gapBroadcast: !offBroadcast && !broadcast && has(broadcastKey),
+        smGroup: sermonKey,
+        bcGroup: broadcastKey
       });
     }
 
     if (doorDows.indexOf(dow) >= 0) {
       var offDoor = ceIsHoliday(iso, CE_ROLE.DOOR, ex);
-      var doorName = '';
-      if (!offDoor) {
-        var w = cePickNext(rotations.door, doorPtr, iso, CE_ROLE.DOOR, ex);
-        doorPtr = w.ptr;
-        doorName = w.name;
-      }
-      doorDays.push({ iso: iso, dow: dow, door: doorName, offDoor: offDoor });
+      var doorName = offDoor ? '' : take('door', iso, CE_ROLE.DOOR);
+      doorDays.push({
+        iso: iso, dow: dow, door: doorName, offDoor: offDoor,
+        gapDoor: !offDoor && !doorName && has('door')
+      });
+    }
+
+    if (praiseDows.indexOf(dow) >= 0) {
+      var offPraise = ceIsHoliday(iso, CE_ROLE.PRAISE, ex);
+      var praiseName = offPraise ? '' : take('praise', iso, CE_ROLE.PRAISE);
+      praiseDays.push({
+        iso: iso, dow: dow, praise: praiseName, offPraise: offPraise,
+        gapPraise: !offPraise && !praiseName && has('praise')
+      });
     }
   }
 
   ceResolveConflicts(dawnDays, ex);
 
   var byIso = {};
-  var i;
-  for (i = 0; i < dawnDays.length; i++) {
-    var day = dawnDays[i];
-    byIso[day.iso] = {
-      iso: day.iso,
-      preacher: day.preacher,
-      broadcast: day.broadcast,
-      door: '',
-      offSermon: !!day.offSermon,
-      offBroadcast: !!day.offBroadcast,
-      offDoor: false,
-      swapNote: day.swapNote || '',
-      warning: day.warning || ''
-    };
-  }
-  for (i = 0; i < doorDays.length; i++) {
-    var wd = doorDays[i];
-    if (!byIso[wd.iso]) {
-      byIso[wd.iso] = {
-        iso: wd.iso, preacher: '', broadcast: '', door: '',
-        offSermon: false, offBroadcast: false, offDoor: false,
+  function slot(iso) {
+    if (!byIso[iso]) {
+      byIso[iso] = {
+        iso: iso, preacher: '', broadcast: '', door: '', praise: '',
+        offSermon: false, offBroadcast: false, offDoor: false, offPraise: false,
+        gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false,
         swapNote: '', warning: ''
       };
     }
-    byIso[wd.iso].door = wd.door;
-    byIso[wd.iso].offDoor = !!wd.offDoor;
+    return byIso[iso];
   }
 
-  return { byIso: byIso, dawnDays: dawnDays, doorDays: doorDays };
+  var i;
+  for (i = 0; i < dawnDays.length; i++) {
+    var day = dawnDays[i];
+    var cell = slot(day.iso);
+    cell.preacher = day.preacher;
+    cell.broadcast = day.broadcast;
+    cell.offSermon = !!day.offSermon;
+    cell.offBroadcast = !!day.offBroadcast;
+    cell.gapSermon = !!day.gapSermon;
+    cell.gapBroadcast = !!day.gapBroadcast;
+    cell.swapNote = day.swapNote || '';
+    cell.warning = day.warning || '';
+  }
+  for (i = 0; i < doorDays.length; i++) {
+    var wd = doorDays[i];
+    slot(wd.iso).door = wd.door;
+    slot(wd.iso).offDoor = !!wd.offDoor;
+    slot(wd.iso).gapDoor = !!wd.gapDoor;
+  }
+  for (i = 0; i < praiseDays.length; i++) {
+    var pd = praiseDays[i];
+    slot(pd.iso).praise = pd.praise;
+    slot(pd.iso).offPraise = !!pd.offPraise;
+    slot(pd.iso).gapPraise = !!pd.gapPraise;
+  }
+
+  return { byIso: byIso, dawnDays: dawnDays, doorDays: doorDays, praiseDays: praiseDays };
 }
 
 /* ------------------------------------------------------------------ */
@@ -413,10 +459,21 @@ function ceReadConfig() {
   var anchor = ceCellToIso(map['로테이션 시작일']);
   if (!anchor) throw new Error('"' + CE_TAB.SETTINGS + '" 탭의 [로테이션 시작일] 을 YYYY-MM-DD 형식으로 채워 주세요.');
 
+  function pick(keys, fallback) {
+    for (var k = 0; k < keys.length; k++) {
+      var v = map[keys[k]];
+      if (v !== undefined && String(v).trim() !== '') return v;
+    }
+    return fallback;
+  }
+
   return {
     anchor: anchor,
-    dawnDows: ceParseDowList(map['새벽예배 요일'] || '월,화,수,목,금,토'),
-    doorDows: ceParseDowList(map['수요저녁 요일'] || '수')
+    dawnDows: ceParseDowList(pick(['새벽예배 요일'], '월,화,수,목,금,토')),
+    satDows: ceParseDowList(pick(['토요 별도 요일', '토요별도 요일'], '토')),
+    // '수요저녁 요일' 은 예전 이름입니다. 이미 쓰고 계신 시트를 위해 같이 받습니다.
+    doorDows: ceParseDowList(pick(['수요현관 요일', '수요저녁 요일'], '수')),
+    praiseDows: ceParseDowList(pick(['토요찬양 요일'], '토'))
   };
 }
 
@@ -424,20 +481,64 @@ function ceReadConfig() {
 /* 로테이션 명단                                                       */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 명단 열 정의. 열 위치가 아니라 1행 머리글 이름으로 찾습니다.
+ * 그래야 열 순서를 바꾸거나 중간에 열을 끼워 넣어도 어긋나지 않습니다.
+ */
+var CE_ROTATION_COLUMNS = [
+  { key: 'sermon', header: '설교', aliases: ['설교', '설교자', '평일설교'] },
+  { key: 'broadcast', header: '방송', aliases: ['방송', '방송실', '평일방송'] },
+  { key: 'satSermon', header: '토요설교', aliases: ['토요설교', '토설교'] },
+  { key: 'satBroadcast', header: '토요방송', aliases: ['토요방송', '토방송', '토요방송실'] },
+  { key: 'door', header: '수요현관', aliases: ['수요현관', '현관', '수요저녁현관'] },
+  { key: 'praise', header: '토요찬양', aliases: ['토요찬양', '찬양'] }
+];
+
+function ceNormalizeHeader(v) {
+  return String(v == null ? '' : v).replace(/\s+/g, '');
+}
+
+/** 머리글 이름 -> 열 번호(1부터). 못 찾은 명단은 빠집니다. */
+function ceRotationColumnMap(sh) {
+  var lastCol = Math.max(sh.getLastColumn(), 1);
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var found = {};
+  for (var c = 0; c < headers.length; c++) {
+    var h = ceNormalizeHeader(headers[c]);
+    if (!h) continue;
+    for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) {
+      var def = CE_ROTATION_COLUMNS[i];
+      if (found[def.key]) continue;
+      if (def.aliases.indexOf(h) >= 0) { found[def.key] = c + 1; break; }
+    }
+  }
+  return found;
+}
+
+function ceEmptyRotations() {
+  var rot = {};
+  for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) rot[CE_ROTATION_COLUMNS[i].key] = [];
+  return rot;
+}
+
 function ceReadRotations() {
   var sh = ceSheet(CE_TAB.ROTATION, false);
   if (!sh) throw new Error('"' + CE_TAB.ROTATION + '" 탭이 없습니다. 메뉴에서 [초기 설정 만들기] 를 먼저 눌러 주세요.');
 
+  var rot = ceEmptyRotations();
   var lastRow = sh.getLastRow();
-  var rot = { sermon: [], broadcast: [], door: [] };
   if (lastRow < 2) return rot;
 
-  var values = sh.getRange(2, 1, lastRow - 1, 3).getValues();
-  var cols = ['sermon', 'broadcast', 'door'];
-  for (var r = 0; r < values.length; r++) {
-    for (var c = 0; c < 3; c++) {
-      var name = String(values[r][c] == null ? '' : values[r][c]).trim();
-      if (name) rot[cols[c]].push(name);
+  var colMap = ceRotationColumnMap(sh);
+  var lastCol = Math.max(sh.getLastColumn(), 1);
+  var values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+  for (var key in colMap) {
+    if (!Object.prototype.hasOwnProperty.call(colMap, key)) continue;
+    var col = colMap[key] - 1;
+    for (var r = 0; r < values.length; r++) {
+      var name = String(values[r][col] == null ? '' : values[r][col]).trim();
+      if (name) rot[key].push(name);
     }
   }
   return rot;
@@ -479,6 +580,7 @@ function ceRoleLabel(role) {
   if (role === CE_ROLE.SERMON) return '설교';
   if (role === CE_ROLE.BROADCAST) return '방송';
   if (role === CE_ROLE.DOOR) return '수요현관';
+  if (role === CE_ROLE.PRAISE) return '토요찬양';
   return '전체';
 }
 
@@ -689,7 +791,7 @@ function ceRenderCalendar(year, month) {
  * 월별 배정 표를 그립니다. (원래 쓰시던 표와 같은 모양)
  *
  *   A열 = 항목 이름,  B~G열 = 월~토
- *   한 주마다 Date / 설교자 / 방송실 / 수요저녁 현관 네 줄
+ *   한 주마다 Date / 설교자 / 방송실 / 수요현관·토요찬양 네 줄
  */
 
 var CE_OUT = {
@@ -697,11 +799,26 @@ var CE_OUT = {
   DOW_ROW: 2,
   FIRST_BLOCK_ROW: 3,
   COLS: 6,          // 월~토
-  FIRST_COL: 2,     // B열
-  WED_OFFSET: 2     // 월~토 중 수요일 위치 -> D열
+  FIRST_COL: 2      // B열
 };
 
-var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요저녁 현관'];
+var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요현관/토요찬양'];
+
+/**
+ * 넷째 줄은 요일에 따라 내용이 바뀝니다.
+ * 수요일에는 수요현관 담당, 토요일에는 토요찬양 담당이 들어갑니다.
+ */
+function ceSpecialSlot(dow, info, cfg) {
+  var doorDows = cfg.doorDows && cfg.doorDows.length ? cfg.doorDows : [3];
+  var praiseDows = cfg.praiseDows && cfg.praiseDows.length ? cfg.praiseDows : [6];
+  if (doorDows.indexOf(dow) >= 0) {
+    return { name: info.door || '', off: !!info.offDoor, gap: !!info.gapDoor, label: '수요현관' };
+  }
+  if (praiseDows.indexOf(dow) >= 0) {
+    return { name: info.praise || '', off: !!info.offPraise, gap: !!info.gapPraise, label: '토요찬양' };
+  }
+  return { name: '', off: false, gap: false, label: '' };
+}
 
 function ceMonthSheetName(year, month) {
   return ceFormatYearMonth(year, month);
@@ -727,19 +844,27 @@ function ceGenerateMonth(year, month) {
 
   var sched = ceBuildSchedule(cfg, rot, ex, grid.endIso);
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
-  return { sheetName: ceMonthSheetName(year, month), warnings: ceCollectWarnings(grid, sched) };
+  return { sheetName: ceMonthSheetName(year, month), warnings: ceCollectWarnings(grid, sched, cfg) };
 }
 
-function ceCollectWarnings(grid, sched) {
+function ceCollectWarnings(grid, sched, cfg) {
   var out = [];
+  var labels = [
+    { gap: 'gapSermon', label: '설교자' },
+    { gap: 'gapBroadcast', label: '방송실' },
+    { gap: 'gapDoor', label: '수요현관' },
+    { gap: 'gapPraise', label: '토요찬양' }
+  ];
   for (var w = 0; w < grid.weeks.length; w++) {
     for (var c = 0; c < CE_OUT.COLS; c++) {
       var cell = grid.weeks[w][c];
       var a = sched.byIso[cell.iso];
-      if (!a) continue;
+      if (!a || cell.iso < grid.startIso) continue;
       if (a.warning) out.push(cell.iso + ' : ' + a.warning);
-      if (!a.preacher && !a.offSermon && cell.iso >= grid.startIso) {
-        out.push(cell.iso + ' : 설교자를 채우지 못했습니다 (전원 예외)');
+      for (var i = 0; i < labels.length; i++) {
+        if (a[labels[i].gap]) {
+          out.push(cell.iso + ' : ' + labels[i].label + ' 를 채우지 못했습니다 (전원 예외)');
+        }
       }
     }
   }
@@ -749,6 +874,22 @@ function ceCollectWarnings(grid, sched) {
 /** 휴일 칸: 비운 채로 표시만 해 둡니다. 그대로 손으로 적으시면 됩니다. */
 function ceMarkHoliday(sh, row, col) {
   sh.getRange(row, col).setBackground(CE_COLOR.HOLIDAY_BG).setNote('휴일 — 직접 입력하세요');
+}
+
+/** 명단은 있는데 그날 전원이 예외라 못 채운 칸. */
+function ceMarkGap(sh, row, col) {
+  sh.getRange(row, col).setBackground(CE_COLOR.WARN_BG).setNote('배정할 사람이 없습니다 (전원 예외)');
+}
+
+/** '설교 4명 / 방송 3명 / ...' 처럼 채워진 명단만 적습니다. */
+function ceRotationSummary(rot) {
+  var parts = [];
+  for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) {
+    var def = CE_ROTATION_COLUMNS[i];
+    var list = rot[def.key] || [];
+    if (list.length) parts.push(def.header + ' ' + list.length + '명');
+  }
+  return parts.length ? parts.join(' / ') : '명단 없음';
 }
 
 function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
@@ -780,19 +921,20 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
     var dates = [];
     var preachers = [];
     var broadcasts = [];
-    var doors = [];
+    var specials = [];
 
     for (var c = 0; c < CE_OUT.COLS; c++) {
       var cell = week[c];
       var a = sched.byIso[cell.iso] || {
-        preacher: '', broadcast: '', door: '',
-        offSermon: false, offBroadcast: false, offDoor: false,
+        preacher: '', broadcast: '', door: '', praise: '',
+        offSermon: false, offBroadcast: false, offDoor: false, offPraise: false,
+        gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false,
         swapNote: '', warning: ''
       };
       dates.push(cell.day);
       preachers.push(a.preacher || '');
       broadcasts.push(a.broadcast || '');
-      doors.push(c === CE_OUT.WED_OFFSET ? (a.door || '') : '');
+      specials.push(ceSpecialSlot(cell.dow, a, cfg).name);
     }
 
     sh.getRange(base, 1, 4, 1).setValues([[CE_ROW_LABELS[0]], [CE_ROW_LABELS[1]], [CE_ROW_LABELS[2]], [CE_ROW_LABELS[3]]])
@@ -801,7 +943,7 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
     sh.getRange(base, CE_OUT.FIRST_COL, 1, CE_OUT.COLS).setValues([dates]);
     sh.getRange(base + 1, CE_OUT.FIRST_COL, 1, CE_OUT.COLS).setValues([preachers]);
     sh.getRange(base + 2, CE_OUT.FIRST_COL, 1, CE_OUT.COLS).setValues([broadcasts]);
-    sh.getRange(base + 3, CE_OUT.FIRST_COL, 1, CE_OUT.COLS).setValues([doors]);
+    sh.getRange(base + 3, CE_OUT.FIRST_COL, 1, CE_OUT.COLS).setValues([specials]);
 
     sh.getRange(base, 1, 1, totalCols)
       .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff').setFontWeight('bold');
@@ -818,10 +960,12 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
       var info = sched.byIso[cellInfo.iso];
       if (!info) continue;
 
+      var special = ceSpecialSlot(cellInfo.dow, info, cfg);
+
       // 휴일로 잡은 칸은 비운 채로 노랗게 두어 손으로 적으실 수 있게 합니다.
       if (info.offSermon) ceMarkHoliday(sh, base + 1, col);
       if (info.offBroadcast) ceMarkHoliday(sh, base + 2, col);
-      if (info.offDoor && k === CE_OUT.WED_OFFSET) ceMarkHoliday(sh, base + 3, col);
+      if (special.off) ceMarkHoliday(sh, base + 3, col);
       if (info.offSermon && info.offBroadcast) {
         sh.getRange(base, col).setNote('휴일');
       }
@@ -832,9 +976,9 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
       if (info.warning) {
         sh.getRange(base + 2, col).setBackground(CE_COLOR.WARN_BG).setNote(info.warning);
       }
-      if (!info.preacher && !info.offSermon) {
-        sh.getRange(base + 1, col).setBackground(CE_COLOR.WARN_BG).setNote('배정할 사람이 없습니다 (전원 예외)');
-      }
+      if (info.gapSermon) ceMarkGap(sh, base + 1, col);
+      if (info.gapBroadcast) ceMarkGap(sh, base + 2, col);
+      if (special.gap) ceMarkGap(sh, base + 3, col);
     }
   }
 
@@ -844,8 +988,7 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
 
   var footRow = lastRow + 2;
   sh.getRange(footRow, 1, 1, totalCols).merge()
-    .setValue('자동 생성 · 기준일 ' + cfg.anchor +
-      ' · 설교 ' + rot.sermon.length + '명 / 방송 ' + rot.broadcast.length + '명 / 수요현관 ' + rot.door.length + '명' +
+    .setValue('자동 생성 · 기준일 ' + cfg.anchor + ' · ' + ceRotationSummary(rot) +
       ' · ' + Utilities.formatDate(new Date(), ceTz(), 'yyyy-MM-dd HH:mm'))
     .setFontSize(9).setFontColor('#666666');
 
@@ -865,17 +1008,90 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
  * 이미 있는 탭은 건드리지 않습니다.
  */
 
+/** 설정 탭에 있어야 할 항목들. 없으면 채워 넣습니다. */
+var CE_SETTING_ROWS = [
+  ['로테이션 시작일', null,
+    '이 날짜에 각 명단의 첫 번째 사람이 섭니다. 한 번 정하면 웬만하면 바꾸지 마세요.'],
+  ['새벽예배 요일', '월,화,수,목,금,토',
+    '설교자와 방송실을 배정할 요일'],
+  ['토요 별도 요일', '토',
+    '이 요일은 [토요설교]·[토요방송] 명단으로 따로 돌립니다. 두 명단을 비워 두면 평일 명단으로 그냥 이어서 돕니다.'],
+  ['수요현관 요일', '수',
+    '수요현관 담당을 배정할 요일. 넷째 줄에 들어갑니다.'],
+  ['토요찬양 요일', '토',
+    '토요찬양 담당을 배정할 요일. 같은 넷째 줄에 들어갑니다.']
+];
+
 function ceSetupAll() {
   var created = [];
+  var updated = [];
+
   if (ceSetupSettings()) created.push(CE_TAB.SETTINGS);
+  else if (ceUpgradeSettings().length) updated.push(CE_TAB.SETTINGS);
+
   if (ceSetupRotation()) created.push(CE_TAB.ROTATION);
+  else {
+    var added = ceUpgradeRotation();
+    if (added.length) updated.push(CE_TAB.ROTATION + ' (' + added.join(', ') + ' 추가)');
+  }
 
   if (!ceSheet(CE_TAB.CALENDAR, false)) {
     var today = new Date();
     ceRenderCalendar(today.getFullYear(), today.getMonth() + 1);
     created.push(CE_TAB.CALENDAR);
   }
-  return created;
+  return { created: created, updated: updated };
+}
+
+/** 이미 있는 설정 탭에 빠진 항목만 아래에 덧붙입니다. */
+function ceUpgradeSettings() {
+  var sh = ceSheet(CE_TAB.SETTINGS, false);
+  if (!sh) return [];
+
+  var lastRow = Math.max(sh.getLastRow(), 1);
+  var existing = {};
+  var values = sh.getRange(1, 1, lastRow, 1).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var key = String(values[i][0]).trim();
+    if (key) existing[key] = true;
+  }
+  // '수요저녁 요일' 은 예전 이름이라 그대로 두고 새 이름을 또 만들지 않습니다.
+  if (existing['수요저녁 요일']) existing['수요현관 요일'] = true;
+
+  var added = [];
+  for (var r = 0; r < CE_SETTING_ROWS.length; r++) {
+    var row = CE_SETTING_ROWS[r];
+    if (existing[row[0]]) continue;
+    lastRow++;
+    sh.getRange(lastRow, 1, 1, 3)
+      .setValues([[row[0], row[1] == null ? ceDefaultAnchor() : row[1], row[2]]]);
+    sh.getRange(lastRow, 1).setFontWeight('bold');
+    sh.getRange(lastRow, 2).setBackground('#fff2cc').setNumberFormat('@');
+    sh.getRange(lastRow, 3).setWrap(true);
+    added.push(row[0]);
+  }
+  return added;
+}
+
+/** 이미 있는 로테이션 탭에 빠진 명단 열을 오른쪽에 덧붙입니다. */
+function ceUpgradeRotation() {
+  var sh = ceSheet(CE_TAB.ROTATION, false);
+  if (!sh) return [];
+
+  var found = ceRotationColumnMap(sh);
+  var col = Math.max(sh.getLastColumn(), 1) + 1;
+  var added = [];
+  for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) {
+    var def = CE_ROTATION_COLUMNS[i];
+    if (found[def.key]) continue;
+    sh.getRange(1, col).setValue(def.header)
+      .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff')
+      .setFontWeight('bold').setHorizontalAlignment('center');
+    sh.setColumnWidth(col, 140);
+    added.push(def.header);
+    col++;
+  }
+  return added;
 }
 
 /** 이번 주(또는 다음 달 1일이 속한 주)의 월요일 - 기준일 기본값으로 씁니다. */
@@ -889,20 +1105,20 @@ function ceDefaultAnchor() {
 function ceSetupSettings() {
   if (ceSheet(CE_TAB.SETTINGS, false)) return false;
   var sh = ceSheet(CE_TAB.SETTINGS, true);
-  var rows = [
-    ['항목', '값', '설명'],
-    ['로테이션 시작일', ceDefaultAnchor(), '이 날짜에 각 명단의 첫 번째 사람이 섭니다. 한 번 정하면 웬만하면 바꾸지 마세요.'],
-    ['새벽예배 요일', '월,화,수,목,금,토', '설교자와 방송실을 배정할 요일'],
-    ['수요저녁 요일', '수', '수요저녁 현관 담당을 배정할 요일']
-  ];
+
+  var rows = [['항목', '값', '설명']];
+  for (var i = 0; i < CE_SETTING_ROWS.length; i++) {
+    var r = CE_SETTING_ROWS[i];
+    rows.push([r[0], r[1] == null ? ceDefaultAnchor() : r[1], r[2]]);
+  }
+
   sh.getRange(1, 1, rows.length, 3).setValues(rows);
   sh.getRange(1, 1, 1, 3).setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff').setFontWeight('bold');
-  sh.getRange(2, 2).setNumberFormat('@');
+  sh.getRange(2, 2, rows.length - 1, 1).setNumberFormat('@').setBackground('#fff2cc');
   sh.getRange(2, 1, rows.length - 1, 1).setFontWeight('bold');
-  sh.getRange(2, 2, rows.length - 1, 1).setBackground('#fff2cc');
-  sh.setColumnWidth(1, 130);
+  sh.setColumnWidth(1, 140);
   sh.setColumnWidth(2, 170);
-  sh.setColumnWidth(3, 460);
+  sh.setColumnWidth(3, 520);
   sh.getRange(1, 3, rows.length, 1).setWrap(true);
   return true;
 }
@@ -910,19 +1126,33 @@ function ceSetupSettings() {
 function ceSetupRotation() {
   if (ceSheet(CE_TAB.ROTATION, false)) return false;
   var sh = ceSheet(CE_TAB.ROTATION, true);
-  sh.getRange(1, 1, 1, 3).setValues([['설교', '방송', '수요현관']])
+
+  var headers = CE_ROTATION_COLUMNS.map(function (d) { return d.header; });
+  var n = headers.length;
+  sh.getRange(1, 1, 1, n).setValues([headers])
     .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff').setFontWeight('bold')
     .setHorizontalAlignment('center');
-  // 안내 문구는 A~C열 바깥(E열)에 둡니다. A~C열에 있으면 명단으로 읽혀 버립니다.
-  sh.getRange(1, 5).setValue('2행부터 한 줄에 한 명씩, 설 순서대로 적으세요.')
+
+  sh.getRange(1, 1).setNote('평일 새벽 설교자 명단');
+  sh.getRange(1, 2).setNote('평일 새벽 방송실 명단');
+  sh.getRange(1, 3).setNote('토요일 설교자 명단. 비워 두면 [설교] 명단으로 그냥 이어서 돕니다.');
+  sh.getRange(1, 4).setNote('토요일 방송실 명단. 비워 두면 [방송] 명단으로 그냥 이어서 돕니다.');
+  sh.getRange(1, 5).setNote('수요일 현관 담당 명단');
+  sh.getRange(1, 6).setNote('토요일 찬양 담당 명단');
+
+  // 안내 문구는 명단 열 바깥에 둡니다. 명단 열에 있으면 사람 이름으로 읽혀 버립니다.
+  var guide = n + 2;
+  sh.getRange(1, guide).setValue('2행부터 한 줄에 한 명씩, 설 순서대로 적으세요.')
     .setFontColor('#666666').setFontWeight('bold');
-  sh.getRange(2, 5).setValue('위에서 아래로 돌아갑니다. 중간에 이름을 끼워 넣거나 빼면 그 뒤 순서가 밀립니다.')
+  sh.getRange(2, guide).setValue('위에서 아래로 돌아갑니다. 중간에 이름을 끼워 넣거나 빼면 그 뒤 순서가 밀립니다.')
     .setFontColor('#666666');
-  sh.getRange(3, 5).setValue('세 명단의 인원 수는 서로 달라도 됩니다. 빈 칸은 알아서 건너뜁니다.')
+  sh.getRange(3, guide).setValue('명단마다 인원 수는 서로 달라도 됩니다. 빈 칸은 알아서 건너뜁니다.')
     .setFontColor('#666666');
-  sh.getRange(1, 1, 1, 3).setNote('이 열에는 이름만 적어 주세요. 메모나 안내 문구를 적으면 사람 이름으로 읽힙니다.');
-  for (var c = 1; c <= 3; c++) sh.setColumnWidth(c, 140);
-  sh.setColumnWidth(5, 420);
+  sh.getRange(4, guide).setValue('머리글 이름으로 찾으므로 열 순서는 바꾸셔도 됩니다.')
+    .setFontColor('#666666');
+
+  for (var c = 1; c <= n; c++) sh.setColumnWidth(c, 130);
+  sh.setColumnWidth(guide, 420);
   sh.setFrozenRows(1);
   return true;
 }
@@ -949,11 +1179,15 @@ function onOpen() {
 function ceMenuSetup() {
   var ui = SpreadsheetApp.getUi();
   try {
-    var created = ceSetupAll();
-    ui.alert(created.length
-      ? '다음 탭을 만들었습니다:\n\n' + created.join(', ') +
-        '\n\n[로테이션] 탭에 이름을 넣고, [설정] 탭의 로테이션 시작일을 확인한 뒤\n[③ 이번 달 배정하기] 를 눌러 주세요.'
-      : '필요한 탭이 이미 모두 있습니다.');
+    var res = ceSetupAll();
+    var msg = [];
+    if (res.created.length) msg.push('만든 탭: ' + res.created.join(', '));
+    if (res.updated.length) msg.push('보완한 탭: ' + res.updated.join(', '));
+    if (!msg.length) msg.push('필요한 탭이 이미 모두 있습니다.');
+    msg.push('');
+    msg.push('[로테이션] 탭에 이름을 넣고, [설정] 탭의 로테이션 시작일을 확인한 뒤');
+    msg.push('[③ 이번 달 배정하기] 를 눌러 주세요.');
+    ui.alert(msg.join('\n'));
   } catch (e) {
     ui.alert('오류: ' + e.message);
   }
@@ -1022,13 +1256,24 @@ function ceMenuCheck() {
     var ex = ceReadAllExceptions();
 
     var lines = [];
+    function dows(list) {
+      return list.map(function (d) { return CE_DOW_NAMES[d]; }).join(',');
+    }
     lines.push('로테이션 시작일 : ' + cfg.anchor);
-    lines.push('새벽예배 요일 : ' + cfg.dawnDows.map(function (d) { return CE_DOW_NAMES[d]; }).join(','));
-    lines.push('수요저녁 요일 : ' + cfg.doorDows.map(function (d) { return CE_DOW_NAMES[d]; }).join(','));
+    lines.push('새벽예배 요일 : ' + dows(cfg.dawnDows));
+    lines.push('토요 별도 요일 : ' + dows(cfg.satDows));
+    lines.push('수요현관 요일 : ' + dows(cfg.doorDows));
+    lines.push('토요찬양 요일 : ' + dows(cfg.praiseDows));
     lines.push('');
-    lines.push('설교 ' + rot.sermon.length + '명 : ' + (rot.sermon.join(', ') || '(비어 있음)'));
-    lines.push('방송 ' + rot.broadcast.length + '명 : ' + (rot.broadcast.join(', ') || '(비어 있음)'));
-    lines.push('수요현관 ' + rot.door.length + '명 : ' + (rot.door.join(', ') || '(비어 있음)'));
+    for (var ci = 0; ci < CE_ROTATION_COLUMNS.length; ci++) {
+      var def = CE_ROTATION_COLUMNS[ci];
+      var list = rot[def.key] || [];
+      lines.push(def.header + ' ' + list.length + '명 : ' + (list.join(', ') || '(비어 있음)'));
+    }
+    if (!rot.satSermon.length || !rot.satBroadcast.length) {
+      lines.push('');
+      lines.push('※ 토요 명단이 비어 있는 쪽은 평일 명단으로 그냥 이어서 돕니다.');
+    }
     lines.push('');
     var holidayCount = 0;
     ex.forEach(function (e) { if (ceIsHolidayName(e.name)) holidayCount++; });
@@ -1054,8 +1299,8 @@ function ceMenuCheck() {
 
 function ceUnknownNames(rot, exceptions) {
   var known = {};
-  ['sermon', 'broadcast', 'door'].forEach(function (k) {
-    rot[k].forEach(function (n) { known[n] = true; });
+  CE_ROTATION_COLUMNS.forEach(function (def) {
+    (rot[def.key] || []).forEach(function (n) { known[n] = true; });
   });
   var seen = {};
   var out = [];

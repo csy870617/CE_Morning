@@ -2,7 +2,7 @@
  * 월별 배정 표를 그립니다. (원래 쓰시던 표와 같은 모양)
  *
  *   A열 = 항목 이름,  B~G열 = 월~토
- *   한 주마다 Date / 설교자 / 방송실 / 수요저녁 현관 네 줄
+ *   한 주마다 Date / 설교자 / 방송실 / 수요현관·토요찬양 네 줄
  */
 
 var CE_OUT = {
@@ -10,11 +10,26 @@ var CE_OUT = {
   DOW_ROW: 2,
   FIRST_BLOCK_ROW: 3,
   COLS: 6,          // 월~토
-  FIRST_COL: 2,     // B열
-  WED_OFFSET: 2     // 월~토 중 수요일 위치 -> D열
+  FIRST_COL: 2      // B열
 };
 
-var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요저녁 현관'];
+var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요현관/토요찬양'];
+
+/**
+ * 넷째 줄은 요일에 따라 내용이 바뀝니다.
+ * 수요일에는 수요현관 담당, 토요일에는 토요찬양 담당이 들어갑니다.
+ */
+function ceSpecialSlot(dow, info, cfg) {
+  var doorDows = cfg.doorDows && cfg.doorDows.length ? cfg.doorDows : [3];
+  var praiseDows = cfg.praiseDows && cfg.praiseDows.length ? cfg.praiseDows : [6];
+  if (doorDows.indexOf(dow) >= 0) {
+    return { name: info.door || '', off: !!info.offDoor, gap: !!info.gapDoor, label: '수요현관' };
+  }
+  if (praiseDows.indexOf(dow) >= 0) {
+    return { name: info.praise || '', off: !!info.offPraise, gap: !!info.gapPraise, label: '토요찬양' };
+  }
+  return { name: '', off: false, gap: false, label: '' };
+}
 
 function ceMonthSheetName(year, month) {
   return ceFormatYearMonth(year, month);
@@ -40,19 +55,27 @@ function ceGenerateMonth(year, month) {
 
   var sched = ceBuildSchedule(cfg, rot, ex, grid.endIso);
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
-  return { sheetName: ceMonthSheetName(year, month), warnings: ceCollectWarnings(grid, sched) };
+  return { sheetName: ceMonthSheetName(year, month), warnings: ceCollectWarnings(grid, sched, cfg) };
 }
 
-function ceCollectWarnings(grid, sched) {
+function ceCollectWarnings(grid, sched, cfg) {
   var out = [];
+  var labels = [
+    { gap: 'gapSermon', label: '설교자' },
+    { gap: 'gapBroadcast', label: '방송실' },
+    { gap: 'gapDoor', label: '수요현관' },
+    { gap: 'gapPraise', label: '토요찬양' }
+  ];
   for (var w = 0; w < grid.weeks.length; w++) {
     for (var c = 0; c < CE_OUT.COLS; c++) {
       var cell = grid.weeks[w][c];
       var a = sched.byIso[cell.iso];
-      if (!a) continue;
+      if (!a || cell.iso < grid.startIso) continue;
       if (a.warning) out.push(cell.iso + ' : ' + a.warning);
-      if (!a.preacher && !a.offSermon && cell.iso >= grid.startIso) {
-        out.push(cell.iso + ' : 설교자를 채우지 못했습니다 (전원 예외)');
+      for (var i = 0; i < labels.length; i++) {
+        if (a[labels[i].gap]) {
+          out.push(cell.iso + ' : ' + labels[i].label + ' 를 채우지 못했습니다 (전원 예외)');
+        }
       }
     }
   }
@@ -62,6 +85,22 @@ function ceCollectWarnings(grid, sched) {
 /** 휴일 칸: 비운 채로 표시만 해 둡니다. 그대로 손으로 적으시면 됩니다. */
 function ceMarkHoliday(sh, row, col) {
   sh.getRange(row, col).setBackground(CE_COLOR.HOLIDAY_BG).setNote('휴일 — 직접 입력하세요');
+}
+
+/** 명단은 있는데 그날 전원이 예외라 못 채운 칸. */
+function ceMarkGap(sh, row, col) {
+  sh.getRange(row, col).setBackground(CE_COLOR.WARN_BG).setNote('배정할 사람이 없습니다 (전원 예외)');
+}
+
+/** '설교 4명 / 방송 3명 / ...' 처럼 채워진 명단만 적습니다. */
+function ceRotationSummary(rot) {
+  var parts = [];
+  for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) {
+    var def = CE_ROTATION_COLUMNS[i];
+    var list = rot[def.key] || [];
+    if (list.length) parts.push(def.header + ' ' + list.length + '명');
+  }
+  return parts.length ? parts.join(' / ') : '명단 없음';
 }
 
 function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
@@ -93,19 +132,20 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
     var dates = [];
     var preachers = [];
     var broadcasts = [];
-    var doors = [];
+    var specials = [];
 
     for (var c = 0; c < CE_OUT.COLS; c++) {
       var cell = week[c];
       var a = sched.byIso[cell.iso] || {
-        preacher: '', broadcast: '', door: '',
-        offSermon: false, offBroadcast: false, offDoor: false,
+        preacher: '', broadcast: '', door: '', praise: '',
+        offSermon: false, offBroadcast: false, offDoor: false, offPraise: false,
+        gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false,
         swapNote: '', warning: ''
       };
       dates.push(cell.day);
       preachers.push(a.preacher || '');
       broadcasts.push(a.broadcast || '');
-      doors.push(c === CE_OUT.WED_OFFSET ? (a.door || '') : '');
+      specials.push(ceSpecialSlot(cell.dow, a, cfg).name);
     }
 
     sh.getRange(base, 1, 4, 1).setValues([[CE_ROW_LABELS[0]], [CE_ROW_LABELS[1]], [CE_ROW_LABELS[2]], [CE_ROW_LABELS[3]]])
@@ -114,7 +154,7 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
     sh.getRange(base, CE_OUT.FIRST_COL, 1, CE_OUT.COLS).setValues([dates]);
     sh.getRange(base + 1, CE_OUT.FIRST_COL, 1, CE_OUT.COLS).setValues([preachers]);
     sh.getRange(base + 2, CE_OUT.FIRST_COL, 1, CE_OUT.COLS).setValues([broadcasts]);
-    sh.getRange(base + 3, CE_OUT.FIRST_COL, 1, CE_OUT.COLS).setValues([doors]);
+    sh.getRange(base + 3, CE_OUT.FIRST_COL, 1, CE_OUT.COLS).setValues([specials]);
 
     sh.getRange(base, 1, 1, totalCols)
       .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff').setFontWeight('bold');
@@ -131,10 +171,12 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
       var info = sched.byIso[cellInfo.iso];
       if (!info) continue;
 
+      var special = ceSpecialSlot(cellInfo.dow, info, cfg);
+
       // 휴일로 잡은 칸은 비운 채로 노랗게 두어 손으로 적으실 수 있게 합니다.
       if (info.offSermon) ceMarkHoliday(sh, base + 1, col);
       if (info.offBroadcast) ceMarkHoliday(sh, base + 2, col);
-      if (info.offDoor && k === CE_OUT.WED_OFFSET) ceMarkHoliday(sh, base + 3, col);
+      if (special.off) ceMarkHoliday(sh, base + 3, col);
       if (info.offSermon && info.offBroadcast) {
         sh.getRange(base, col).setNote('휴일');
       }
@@ -145,9 +187,9 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
       if (info.warning) {
         sh.getRange(base + 2, col).setBackground(CE_COLOR.WARN_BG).setNote(info.warning);
       }
-      if (!info.preacher && !info.offSermon) {
-        sh.getRange(base + 1, col).setBackground(CE_COLOR.WARN_BG).setNote('배정할 사람이 없습니다 (전원 예외)');
-      }
+      if (info.gapSermon) ceMarkGap(sh, base + 1, col);
+      if (info.gapBroadcast) ceMarkGap(sh, base + 2, col);
+      if (special.gap) ceMarkGap(sh, base + 3, col);
     }
   }
 
@@ -157,8 +199,7 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
 
   var footRow = lastRow + 2;
   sh.getRange(footRow, 1, 1, totalCols).merge()
-    .setValue('자동 생성 · 기준일 ' + cfg.anchor +
-      ' · 설교 ' + rot.sermon.length + '명 / 방송 ' + rot.broadcast.length + '명 / 수요현관 ' + rot.door.length + '명' +
+    .setValue('자동 생성 · 기준일 ' + cfg.anchor + ' · ' + ceRotationSummary(rot) +
       ' · ' + Utilities.formatDate(new Date(), ceTz(), 'yyyy-MM-dd HH:mm'))
     .setFontSize(9).setFontColor('#666666');
 

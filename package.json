@@ -4,7 +4,7 @@
   "description": "교회 새벽예배 설교자 · 방송실 · 수요저녁 현관 담당 자동 배정 (Google Apps Script)",
   "private": true,
   "scripts": {
-    "test": "node test/rotation.test.js && node test/calendar.test.js",
+    "test": "node test/rotation.test.js && node test/calendar.test.js && node test/sheets.test.js",
     "build": "node tools/build.js",
     "preview": "node tools/preview.js"
   }

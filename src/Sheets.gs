@@ -67,10 +67,21 @@ function ceReadConfig() {
   var anchor = ceCellToIso(map['로테이션 시작일']);
   if (!anchor) throw new Error('"' + CE_TAB.SETTINGS + '" 탭의 [로테이션 시작일] 을 YYYY-MM-DD 형식으로 채워 주세요.');
 
+  function pick(keys, fallback) {
+    for (var k = 0; k < keys.length; k++) {
+      var v = map[keys[k]];
+      if (v !== undefined && String(v).trim() !== '') return v;
+    }
+    return fallback;
+  }
+
   return {
     anchor: anchor,
-    dawnDows: ceParseDowList(map['새벽예배 요일'] || '월,화,수,목,금,토'),
-    doorDows: ceParseDowList(map['수요저녁 요일'] || '수')
+    dawnDows: ceParseDowList(pick(['새벽예배 요일'], '월,화,수,목,금,토')),
+    satDows: ceParseDowList(pick(['토요 별도 요일', '토요별도 요일'], '토')),
+    // '수요저녁 요일' 은 예전 이름입니다. 이미 쓰고 계신 시트를 위해 같이 받습니다.
+    doorDows: ceParseDowList(pick(['수요현관 요일', '수요저녁 요일'], '수')),
+    praiseDows: ceParseDowList(pick(['토요찬양 요일'], '토'))
   };
 }
 
@@ -78,20 +89,64 @@ function ceReadConfig() {
 /* 로테이션 명단                                                       */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 명단 열 정의. 열 위치가 아니라 1행 머리글 이름으로 찾습니다.
+ * 그래야 열 순서를 바꾸거나 중간에 열을 끼워 넣어도 어긋나지 않습니다.
+ */
+var CE_ROTATION_COLUMNS = [
+  { key: 'sermon', header: '설교', aliases: ['설교', '설교자', '평일설교'] },
+  { key: 'broadcast', header: '방송', aliases: ['방송', '방송실', '평일방송'] },
+  { key: 'satSermon', header: '토요설교', aliases: ['토요설교', '토설교'] },
+  { key: 'satBroadcast', header: '토요방송', aliases: ['토요방송', '토방송', '토요방송실'] },
+  { key: 'door', header: '수요현관', aliases: ['수요현관', '현관', '수요저녁현관'] },
+  { key: 'praise', header: '토요찬양', aliases: ['토요찬양', '찬양'] }
+];
+
+function ceNormalizeHeader(v) {
+  return String(v == null ? '' : v).replace(/\s+/g, '');
+}
+
+/** 머리글 이름 -> 열 번호(1부터). 못 찾은 명단은 빠집니다. */
+function ceRotationColumnMap(sh) {
+  var lastCol = Math.max(sh.getLastColumn(), 1);
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var found = {};
+  for (var c = 0; c < headers.length; c++) {
+    var h = ceNormalizeHeader(headers[c]);
+    if (!h) continue;
+    for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) {
+      var def = CE_ROTATION_COLUMNS[i];
+      if (found[def.key]) continue;
+      if (def.aliases.indexOf(h) >= 0) { found[def.key] = c + 1; break; }
+    }
+  }
+  return found;
+}
+
+function ceEmptyRotations() {
+  var rot = {};
+  for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) rot[CE_ROTATION_COLUMNS[i].key] = [];
+  return rot;
+}
+
 function ceReadRotations() {
   var sh = ceSheet(CE_TAB.ROTATION, false);
   if (!sh) throw new Error('"' + CE_TAB.ROTATION + '" 탭이 없습니다. 메뉴에서 [초기 설정 만들기] 를 먼저 눌러 주세요.');
 
+  var rot = ceEmptyRotations();
   var lastRow = sh.getLastRow();
-  var rot = { sermon: [], broadcast: [], door: [] };
   if (lastRow < 2) return rot;
 
-  var values = sh.getRange(2, 1, lastRow - 1, 3).getValues();
-  var cols = ['sermon', 'broadcast', 'door'];
-  for (var r = 0; r < values.length; r++) {
-    for (var c = 0; c < 3; c++) {
-      var name = String(values[r][c] == null ? '' : values[r][c]).trim();
-      if (name) rot[cols[c]].push(name);
+  var colMap = ceRotationColumnMap(sh);
+  var lastCol = Math.max(sh.getLastColumn(), 1);
+  var values = sh.getRange(2, 1, lastRow - 1, lastCol).getValues();
+
+  for (var key in colMap) {
+    if (!Object.prototype.hasOwnProperty.call(colMap, key)) continue;
+    var col = colMap[key] - 1;
+    for (var r = 0; r < values.length; r++) {
+      var name = String(values[r][col] == null ? '' : values[r][col]).trim();
+      if (name) rot[key].push(name);
     }
   }
   return rot;
@@ -133,6 +188,7 @@ function ceRoleLabel(role) {
   if (role === CE_ROLE.SERMON) return '설교';
   if (role === CE_ROLE.BROADCAST) return '방송';
   if (role === CE_ROLE.DOOR) return '수요현관';
+  if (role === CE_ROLE.PRAISE) return '토요찬양';
   return '전체';
 }
 

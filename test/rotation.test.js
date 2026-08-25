@@ -306,4 +306,149 @@ test('역할 이름 파싱', () => {
   assert.strictEqual(R.ceNormalizeRole('알수없음'), R.CE_ROLE.ALL);
 });
 
+/* ---------- 토요일 별도 명단 · 수요현관/토요찬양 ---------- */
+
+const SAT_CFG = {
+  anchor: '2026-08-31', dawnDows: [1, 2, 3, 4, 5, 6],
+  satDows: [6], doorDows: [3], praiseDows: [6]
+};
+
+test('토요일은 토요 명단으로, 평일은 평일 명단으로 각각 돈다', () => {
+  const rot = {
+    sermon: ['김', '이', '박'], broadcast: ['ㄱ', 'ㄴ'],
+    satSermon: ['토설1', '토설2'], satBroadcast: ['토방1', '토방2'],
+    door: ['현관1'], praise: ['찬양1']
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-12');
+  // 평일에는 토요 명단 사람이 나오지 않는다
+  s.dawnDays.filter(d => d.dow !== 6).forEach(d => {
+    assert.ok(['김', '이', '박'].indexOf(d.preacher) >= 0, d.iso + ' 설교자: ' + d.preacher);
+    assert.ok(['ㄱ', 'ㄴ'].indexOf(d.broadcast) >= 0, d.iso + ' 방송실: ' + d.broadcast);
+  });
+  // 토요일에는 토요 명단 사람만 나온다
+  s.dawnDays.filter(d => d.dow === 6).forEach(d => {
+    assert.ok(['토설1', '토설2'].indexOf(d.preacher) >= 0, d.iso + ' 설교자: ' + d.preacher);
+    assert.ok(['토방1', '토방2'].indexOf(d.broadcast) >= 0, d.iso + ' 방송실: ' + d.broadcast);
+  });
+  assert.strictEqual(s.byIso['2026-09-05'].preacher, '토설1');
+  assert.strictEqual(s.byIso['2026-09-12'].preacher, '토설2');
+});
+
+test('토요일을 빼도 평일 순번은 끊기지 않는다', () => {
+  const rot = {
+    sermon: ['김', '이', '박'], broadcast: ['ㄱ'],
+    satSermon: ['토설'], satBroadcast: ['토방'], door: [], praise: []
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-08');
+  // 8/31 김, 9/1 이, 9/2 박, 9/3 김, 9/4 이, (9/5 토요일은 별도), 9/7 박, 9/8 김
+  assert.strictEqual(s.byIso['2026-09-04'].preacher, '이');
+  assert.strictEqual(s.byIso['2026-09-05'].preacher, '토설');
+  assert.strictEqual(s.byIso['2026-09-07'].preacher, '박');
+  assert.strictEqual(s.byIso['2026-09-08'].preacher, '김');
+});
+
+test('토요 명단을 비워 두면 평일 명단으로 그냥 이어서 돈다', () => {
+  const rot = { sermon: ['김', '이', '박'], broadcast: ['ㄱ'], satSermon: [], satBroadcast: [], door: [], praise: [] };
+  const withSat = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-08');
+  const legacy = R.ceBuildSchedule(CFG, { sermon: ['김', '이', '박'], broadcast: ['ㄱ'], door: [] }, [], '2026-09-08');
+  assert.strictEqual(withSat.byIso['2026-09-05'].preacher, legacy.byIso['2026-09-05'].preacher);
+  assert.strictEqual(withSat.byIso['2026-09-07'].preacher, legacy.byIso['2026-09-07'].preacher);
+});
+
+test('토요설교만 따로 두고 방송은 평일 명단으로 이어갈 수 있다', () => {
+  const rot = {
+    sermon: ['김', '이'], broadcast: ['ㄱ', 'ㄴ', 'ㄷ'],
+    satSermon: ['토설'], satBroadcast: [], door: [], praise: []
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-05');
+  assert.strictEqual(s.byIso['2026-09-05'].preacher, '토설');
+  // 방송은 평일 명단이 끊기지 않고 이어진다: 8/31 ㄱ, 9/1 ㄴ, 9/2 ㄷ, 9/3 ㄱ, 9/4 ㄴ, 9/5 ㄷ
+  assert.strictEqual(s.byIso['2026-09-05'].broadcast, 'ㄷ');
+});
+
+test('토요찬양은 토요일에만, 수요현관은 수요일에만 들어간다', () => {
+  const rot = {
+    sermon: ['김'], broadcast: ['ㄱ'], satSermon: [], satBroadcast: [],
+    door: ['현관1', '현관2'], praise: ['찬양1', '찬양2']
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-12');
+  assert.deepStrictEqual(s.doorDays.map(d => d.iso), ['2026-09-02', '2026-09-09']);
+  assert.deepStrictEqual(s.praiseDays.map(d => d.iso), ['2026-09-05', '2026-09-12']);
+  assert.strictEqual(s.byIso['2026-09-02'].door, '현관1');
+  assert.strictEqual(s.byIso['2026-09-02'].praise, '');
+  assert.strictEqual(s.byIso['2026-09-05'].praise, '찬양1');
+  assert.strictEqual(s.byIso['2026-09-05'].door, '');
+  assert.strictEqual(s.byIso['2026-09-09'].door, '현관2');
+  assert.strictEqual(s.byIso['2026-09-12'].praise, '찬양2');
+});
+
+test('수요현관과 토요찬양은 서로 다른 순번을 쓴다', () => {
+  const rot = {
+    sermon: ['김'], broadcast: ['ㄱ'], satSermon: [], satBroadcast: [],
+    door: ['A', 'B', 'C'], praise: ['A', 'B', 'C']
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-19');
+  assert.deepStrictEqual(s.doorDays.map(d => d.door), ['A', 'B', 'C']);
+  assert.deepStrictEqual(s.praiseDays.map(d => d.praise), ['A', 'B', 'C']);
+});
+
+test('방송실 교대는 같은 명단 안에서만 일어난다', () => {
+  const rot = {
+    sermon: ['김', '이', '박'], broadcast: ['ㄱ', 'ㄴ'],
+    satSermon: ['토가', '토나'], satBroadcast: ['토가', '토나'],
+    door: [], praise: []
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-26');
+  // 토요일끼리 맞바뀌었을 뿐, 평일 사람이 토요일로 넘어오지 않는다
+  s.dawnDays.filter(d => d.dow === 6).forEach(d => {
+    assert.ok(['토가', '토나'].indexOf(d.broadcast) >= 0, d.iso + ' : ' + d.broadcast);
+    assert.notStrictEqual(d.preacher, d.broadcast, d.iso + ' 에서 아직 겹친다');
+  });
+  s.dawnDays.filter(d => d.dow !== 6).forEach(d => {
+    assert.ok(['ㄱ', 'ㄴ'].indexOf(d.broadcast) >= 0, d.iso + ' : ' + d.broadcast);
+  });
+  assert.strictEqual(s.byIso['2026-09-05'].swapNote, '2026-09-12 과 교대');
+});
+
+test('토요 방송 명단이 한 명뿐이라 바꿀 상대가 없으면 경고가 남는다', () => {
+  const rot = {
+    sermon: ['김'], broadcast: ['ㄱ'],
+    satSermon: ['혼자'], satBroadcast: ['혼자'], door: [], praise: []
+  };
+  const s = R.ceBuildSchedule(SAT_CFG, rot, [], '2026-09-12');
+  assert.ok(s.byIso['2026-09-05'].warning, '경고가 있어야 한다');
+});
+
+test("'휴일(토요찬양)' 은 찬양만 비운다", () => {
+  const rot = {
+    sermon: ['김'], broadcast: ['ㄱ'], satSermon: [], satBroadcast: [],
+    door: [], praise: ['찬양1', '찬양2']
+  };
+  const ex = [{ name: '휴일', start: '2026-09-05', end: '2026-09-05', role: R.CE_ROLE.PRAISE }];
+  const s = R.ceBuildSchedule(SAT_CFG, rot, ex, '2026-09-12');
+  assert.strictEqual(s.byIso['2026-09-05'].praise, '');
+  assert.strictEqual(s.byIso['2026-09-05'].offPraise, true);
+  assert.strictEqual(s.byIso['2026-09-05'].preacher, '김');       // 설교는 그대로
+  assert.strictEqual(s.byIso['2026-09-12'].praise, '찬양1');      // 순번은 유지
+});
+
+test('빈칸이 명단 없음 때문인지 전원 예외 때문인지 구분한다', () => {
+  const noList = R.ceBuildSchedule(SAT_CFG,
+    { sermon: ['김'], broadcast: ['ㄱ'], satSermon: [], satBroadcast: [], door: [], praise: [] },
+    [], '2026-09-05');
+  assert.strictEqual(noList.byIso['2026-09-05'].praise, '');
+  assert.strictEqual(noList.byIso['2026-09-05'].gapPraise, false);   // 명단이 없으니 알릴 일이 아니다
+
+  const allOut = R.ceBuildSchedule(SAT_CFG,
+    { sermon: ['김'], broadcast: ['ㄱ'], satSermon: [], satBroadcast: [], door: [], praise: ['찬양1'] },
+    [{ name: '찬양1', start: '2026-09-05', end: '2026-09-05', role: R.CE_ROLE.ALL }], '2026-09-05');
+  assert.strictEqual(allOut.byIso['2026-09-05'].praise, '');
+  assert.strictEqual(allOut.byIso['2026-09-05'].gapPraise, true);    // 이건 알려야 한다
+});
+
+test('토요찬양 역할 이름 파싱', () => {
+  assert.strictEqual(R.ceNormalizeRole('토요찬양'), R.CE_ROLE.PRAISE);
+  assert.strictEqual(R.ceNormalizeRole('찬양'), R.CE_ROLE.PRAISE);
+});
+
 console.log('\n' + passed + ' passed');

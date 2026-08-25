@@ -18,11 +18,15 @@ function onOpen() {
 function ceMenuSetup() {
   var ui = SpreadsheetApp.getUi();
   try {
-    var created = ceSetupAll();
-    ui.alert(created.length
-      ? '다음 탭을 만들었습니다:\n\n' + created.join(', ') +
-        '\n\n[로테이션] 탭에 이름을 넣고, [설정] 탭의 로테이션 시작일을 확인한 뒤\n[③ 이번 달 배정하기] 를 눌러 주세요.'
-      : '필요한 탭이 이미 모두 있습니다.');
+    var res = ceSetupAll();
+    var msg = [];
+    if (res.created.length) msg.push('만든 탭: ' + res.created.join(', '));
+    if (res.updated.length) msg.push('보완한 탭: ' + res.updated.join(', '));
+    if (!msg.length) msg.push('필요한 탭이 이미 모두 있습니다.');
+    msg.push('');
+    msg.push('[로테이션] 탭에 이름을 넣고, [설정] 탭의 로테이션 시작일을 확인한 뒤');
+    msg.push('[③ 이번 달 배정하기] 를 눌러 주세요.');
+    ui.alert(msg.join('\n'));
   } catch (e) {
     ui.alert('오류: ' + e.message);
   }
@@ -91,13 +95,24 @@ function ceMenuCheck() {
     var ex = ceReadAllExceptions();
 
     var lines = [];
+    function dows(list) {
+      return list.map(function (d) { return CE_DOW_NAMES[d]; }).join(',');
+    }
     lines.push('로테이션 시작일 : ' + cfg.anchor);
-    lines.push('새벽예배 요일 : ' + cfg.dawnDows.map(function (d) { return CE_DOW_NAMES[d]; }).join(','));
-    lines.push('수요저녁 요일 : ' + cfg.doorDows.map(function (d) { return CE_DOW_NAMES[d]; }).join(','));
+    lines.push('새벽예배 요일 : ' + dows(cfg.dawnDows));
+    lines.push('토요 별도 요일 : ' + dows(cfg.satDows));
+    lines.push('수요현관 요일 : ' + dows(cfg.doorDows));
+    lines.push('토요찬양 요일 : ' + dows(cfg.praiseDows));
     lines.push('');
-    lines.push('설교 ' + rot.sermon.length + '명 : ' + (rot.sermon.join(', ') || '(비어 있음)'));
-    lines.push('방송 ' + rot.broadcast.length + '명 : ' + (rot.broadcast.join(', ') || '(비어 있음)'));
-    lines.push('수요현관 ' + rot.door.length + '명 : ' + (rot.door.join(', ') || '(비어 있음)'));
+    for (var ci = 0; ci < CE_ROTATION_COLUMNS.length; ci++) {
+      var def = CE_ROTATION_COLUMNS[ci];
+      var list = rot[def.key] || [];
+      lines.push(def.header + ' ' + list.length + '명 : ' + (list.join(', ') || '(비어 있음)'));
+    }
+    if (!rot.satSermon.length || !rot.satBroadcast.length) {
+      lines.push('');
+      lines.push('※ 토요 명단이 비어 있는 쪽은 평일 명단으로 그냥 이어서 돕니다.');
+    }
     lines.push('');
     var holidayCount = 0;
     ex.forEach(function (e) { if (ceIsHolidayName(e.name)) holidayCount++; });
@@ -123,8 +138,8 @@ function ceMenuCheck() {
 
 function ceUnknownNames(rot, exceptions) {
   var known = {};
-  ['sermon', 'broadcast', 'door'].forEach(function (k) {
-    rot[k].forEach(function (n) { known[n] = true; });
+  CE_ROTATION_COLUMNS.forEach(function (def) {
+    (rot[def.key] || []).forEach(function (n) { known[n] = true; });
   });
   var seen = {};
   var out = [];
