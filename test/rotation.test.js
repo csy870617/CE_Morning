@@ -558,6 +558,22 @@ test('월요일 다음이 안 되면 그 다음 평일로 밀어서 찾는다', 
   assert.strictEqual(days[1].broadcast, '임');
 });
 
+test('10/23(금) 겹침 -> 10/24(토)를 건너뛰고 10/26(월) 방송실과 맞바꾼다', () => {
+  const cfg = { anchor: '2026-09-28', dawnDows: [1, 2, 3, 4, 5, 6], satDows: [6], doorDows: [3], praiseDows: [6] };
+  const rot = {
+    sermon: ['가', '나', '다', '라', '마', '바'],
+    broadcast: ['ㄱ', '나', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ'],   // 2번 자리가 설교자와 같은 사람
+    satSermon: ['강'], satBroadcast: ['임'], door: [], praise: []
+  };
+  const s = R.ceBuildSchedule(cfg, rot, [], R.ceMonthGrid(2026, 10).endIso);
+
+  assert.strictEqual(s.byIso['2026-10-23'].preacher, '나', '10/23 설교자');
+  assert.strictEqual(s.byIso['2026-10-23'].broadcast, 'ㄷ', '10/26 방송실을 데려온다');
+  assert.strictEqual(s.byIso['2026-10-26'].broadcast, '나', '10/23 방송실이 넘어간다');
+  assert.strictEqual(s.byIso['2026-10-23'].swapNote, '2026-10-26 과 맞바꿈');
+  assert.strictEqual(s.byIso['2026-10-24'].broadcast, '임', '10/24 토요일은 그대로');
+});
+
 test('토요일 겹침은 다음 토요일과 바꾼다 (평일로 넘어가지 않는다)', () => {
   const days = [
     satDay('2026-09-05', 'S', 'S'),

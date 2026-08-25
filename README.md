@@ -209,7 +209,7 @@ clasp push
 ## 개발자용
 
 ```bash
-npm test        # 테스트 93개 (배정 규칙 53, 달력 파싱 10, 시트 동작 30)
+npm test        # 테스트 94개 (배정 규칙 54, 달력 파싱 10, 시트 동작 30)
 npm run preview # 시트 없이 터미널에서 9월 표 미리보기 (휴가·휴일 예시 포함)
 npm run build   # src/*.gs -> dist/Code.gs
 ```
