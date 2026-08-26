@@ -277,9 +277,12 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
   var sh = ceSheet(ceMonthSheetName(year, month), true);
   sh.clear();
   sh.clearNotes();
-  // 지난번에 그린 병합을 먼저 풉니다. 주 수가 5주/6주로 달라지면
-  // 예전 병합이 엉뚱한 자리에 남습니다.
-  sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).breakApart();
+  // clear() 는 내용과 서식만 지웁니다. 병합과 데이터 확인(체크박스) 규칙은 남아서,
+  // 지난번 체크박스 자리에 이번에 글자가 들어가면 시트가 규칙 위반이라고 합니다.
+  // 그리는 자리마다 어긋나지 않도록 둘 다 먼저 걷어냅니다.
+  var whole = sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns());
+  whole.breakApart();
+  whole.clearDataValidations();
 
   var totalCols = CE_OUT.FIRST_COL + CE_OUT.COLS - 1;   // G열
 

@@ -45,6 +45,15 @@ function makeRange(sheet, row, col, numRows, numCols) {
     },
     breakApart() { sheet.merges = []; return r; },
     setDataValidation(rule) { sheet.validations.set(`${row},${col}`, rule); return r; },
+    clearDataValidations() {
+      for (let i = 0; i < numRows; i++) {
+        for (let j = 0; j < numCols; j++) {
+          sheet.validations.delete(`${row + i},${col + j}`);
+          sheet.checkboxes.delete(`${row + i},${col + j}`);
+        }
+      }
+      return r;
+    },
     insertCheckboxes() {
       for (let i = 0; i < numRows; i++) {
         for (let j = 0; j < numCols; j++) {

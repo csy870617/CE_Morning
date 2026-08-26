@@ -830,4 +830,50 @@ test('배정표에 아이디나 비밀번호가 들어가지 않는다', () => {
   });
 });
 
+
+test('예전 체크박스 자리에 글자가 들어가도 규칙이 남지 않는다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  const row = findQtRow(sh);
+
+  // 예전 버전이 A열에 체크박스를 두었던 상황을 흉내 냅니다
+  sh.getRange(row, 1).insertCheckboxes();
+  assert.ok(sh.checkboxes.has(`${row},1`));
+
+  ctx.ceGenerateMonth(2026, 9);      // 다시 그리면
+  const after = findQtRow(sh);
+  assert.ok(!sh.checkboxes.has(`${after},1`), '글자가 들어갈 자리에 체크박스 규칙이 남으면 안 된다');
+  assert.ok(sh.checkboxes.has(`${after},7`), '체크박스는 오른쪽 끝에만 있어야 한다');
+});
+
+test('이름이 줄어들어 체크박스 줄이 짧아져도 규칙이 남지 않는다', () => {
+  const { ctx, ss } = prepared({
+    '설교': ['가목사', '나목사', '다목사', '라목사', '마목사'],
+    '방송': ['바집사', '사집사', '아집사']
+  });
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  const before = [];
+  sh.checkboxes.forEach(k => before.push(k));
+  assert.ok(before.length > 4, '처음엔 체크박스가 여럿이어야 한다');
+
+  // 명단을 줄이고 다시 그린다
+  const rot = ss.getSheetByName('로테이션');
+  const headers = rot.getRange(1, 1, 1, rot.getLastColumn()).getValues()[0];
+  const sermonCol = headers.indexOf('설교') + 1;
+  for (let r = 2; r <= 6; r++) rot._set(r, sermonCol, '');
+  rot._set(2, sermonCol, '가목사');
+
+  ctx.ceGenerateMonth(2026, 9);
+  const qt = findQtRow(sh);
+  sh.checkboxes.forEach(k => {
+    const [r, c] = k.split(',').map(Number);
+    const value = sh._get(r, c);
+    assert.ok(value === false || value === true,
+      `${k} 에 체크박스 규칙이 남았는데 값은 ${JSON.stringify(value)} 이다`);
+  });
+  assert.ok(sh.checkboxes.has(`${qt},7`));
+});
+
 console.log('\n' + passed + ' passed');
