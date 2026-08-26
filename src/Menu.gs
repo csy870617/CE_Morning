@@ -6,7 +6,6 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('새벽예배 배정')
     .addItem('새벽설교 배정표 만들기', 'ceMenuGenerate')
-    .addItem('생명의 삶 열기', 'ceShowQt')
     .addSeparator()
     .addItem('초기 설정 만들기', 'ceMenuSetup')
     .addToUi();
@@ -60,6 +59,11 @@ function ceMenuSetup() {
       msg.push('');
       msg.push('※ 이제 쓰지 않는 탭이 남아 있습니다: ' + stale.join(', '));
       msg.push('   지우셔도 배정에는 아무 영향이 없습니다.');
+    }
+
+    if (res.trigger) {
+      msg.push('');
+      msg.push('배정표 아래 [생명의 삶 묵상달력 열기] 체크박스가 동작하도록 설정했습니다.');
     }
 
     msg.push('');

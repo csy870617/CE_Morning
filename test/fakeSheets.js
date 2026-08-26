@@ -152,9 +152,14 @@ function makeSpreadsheet() {
 
 function makeContext() {
   const ss = makeSpreadsheet();
-  return {
+  const shown = [];
+  const globalsRef = {};
+  const ctx = {
     ss,
-    globals: {
+    shownDialogs: shown,
+    globals: globalsRef
+  };
+  Object.assign(globalsRef, {
       console,
       SpreadsheetApp: {
         getActiveSpreadsheet: () => ss,
@@ -178,7 +183,28 @@ function makeContext() {
           };
           return builder;
         },
-        getUi() { throw new Error('테스트에서는 UI 를 쓰지 않습니다'); }
+        getUi: () => ({
+          showModalDialog(html, title) { shown.push({ html: html.html, title: title }); }
+        })
+      },
+      ScriptApp: {
+        _triggers: [],
+        getUserTriggers() { return globalsRef.ScriptApp._triggers; },
+        newTrigger(fn) {
+          const t = { fn, getHandlerFunction: () => fn };
+          const builder = {
+            forSpreadsheet() { return builder; },
+            onEdit() { return builder; },
+            create() { globalsRef.ScriptApp._triggers.push(t); return t; }
+          };
+          return builder;
+        }
+      },
+      HtmlService: {
+        createHtmlOutput(html) {
+          const o = { html, width: 0, height: 0, setWidth(w) { o.width = w; return o; }, setHeight(h) { o.height = h; return o; } };
+          return o;
+        }
       },
       Utilities: {
         formatDate(d, tz, fmt) {
@@ -187,8 +213,8 @@ function makeContext() {
           return fmt === 'yyyy-MM-dd' ? iso : `${iso} 00:00`;
         }
       }
-    }
-  };
+  });
+  return ctx;
 }
 
 module.exports = { makeContext };

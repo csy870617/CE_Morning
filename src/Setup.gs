@@ -38,7 +38,14 @@ function ceSetupAll() {
     created.push(CE_TAB.CALENDAR);
   }
   ceOrderTabs(null);
-  return { created: created, updated: updated, renamed: renamed };
+
+  var trigger = false;
+  try {
+    trigger = ceInstallQtTrigger();
+  } catch (err) {
+    // 트리거를 못 걸어도 나머지는 그대로 됩니다.
+  }
+  return { created: created, updated: updated, renamed: renamed, trigger: trigger };
 }
 
 /** 이미 있는 설정 탭에 빠진 항목만 아래에 덧붙입니다. */

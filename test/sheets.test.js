@@ -9,8 +9,10 @@ const { makeContext } = require('./fakeSheets');
 const FILES = ['Rotation.gs', 'Sheets.gs', 'Calendar.gs', 'Render.gs', 'Qt.gs', 'Setup.gs', 'Menu.gs'];
 
 function load() {
-  const { ss, globals } = makeContext();
+  const made = makeContext();
+  const { ss, globals } = made;
   const ctx = vm.createContext(globals);
+  ctx.__dialogs = () => made.shownDialogs;
   FILES.forEach(f => {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', f), 'utf8'), ctx, { filename: f });
   });
@@ -735,36 +737,68 @@ test('아래 설명줄은 이름 목록보다 뒤에 온다', () => {
 /** 배정표에서 묵상달력 링크가 있는 줄을 찾습니다. */
 function findQtRow(sh) {
   for (let r = 1; r <= 60; r++) {
-    if (String(sh._get(r, 1)).indexOf('생명의 삶 묵상달력 열기') > 0) return r;
+    if (String(sh._get(r, 2)).indexOf('생명의 삶 묵상달력 열기') === 0) return r;
   }
   return 0;
 }
 
-test('배정표 아래에 묵상달력 링크가 들어간다', () => {
+test('배정표 아래에 묵상달력 줄과 체크박스가 들어간다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
 
   const row = findQtRow(sh);
-  assert.ok(row > 0, '링크 줄을 찾지 못했다');
-  const cell = String(sh._get(row, 1));
-  assert.ok(cell.indexOf('HYPERLINK') === 1, cell);
-  assert.ok(cell.indexOf('duranno.com/qt/view/calendar.asp') > 0, cell);
+  assert.ok(row > 0, '묵상달력 줄을 찾지 못했다');
+  assert.ok(sh.checkboxes.has(`${row},1`), 'A열에 체크박스가 있어야 한다');
 });
 
-test('링크는 이름 목록 아래, 설명줄 위에 온다', () => {
+test('체크박스를 누르면 창이 뜨고 체크는 다시 풀린다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  const row = findQtRow(sh);
+
+  sh._set(row, 1, true);
+  ctx.ceOnQtCheckbox({ range: sh.getRange(row, 1) });
+
+  const dialogs = ctx.__dialogs();
+  assert.strictEqual(dialogs.length, 1, '창이 한 번 떠야 한다');
+  assert.ok(dialogs[0].html.indexOf('duranno.com/qt/view/calendar.asp') > 0, dialogs[0].html);
+  assert.strictEqual(dialogs[0].title.indexOf('생명의 삶'), 0, dialogs[0].title);
+  assert.strictEqual(sh._get(row, 1), false, '체크가 풀려 있어야 다시 누를 수 있다');
+});
+
+test('체크를 푸는 편집이나 다른 칸에는 반응하지 않는다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  const row = findQtRow(sh);
+
+  sh._set(row, 1, false);
+  ctx.ceOnQtCheckbox({ range: sh.getRange(row, 1) });     // 체크를 푸는 경우
+  ctx.ceOnQtCheckbox({ range: sh.getRange(4, 3) });        // 표 한가운데
+  ctx.ceOnQtCheckbox({ range: ss.getSheetByName('로테이션').getRange(1, 1) });
+
+  assert.strictEqual(ctx.__dialogs().length, 0);
+});
+
+test('이름 체크박스를 눌러도 묵상달력 창이 뜨지 않는다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
 
-  const qtRow = findQtRow(sh);
-  let footRow = 0;
-  for (let r = 1; r <= 60; r++) {
-    if (String(sh._get(r, 1)).indexOf('자동 생성') === 0) footRow = r;
-  }
-  const p = { firstCheck: 3 + 5 * 4 - 1 + 4 };
-  assert.ok(qtRow > p.firstCheck, '이름 목록보다 아래여야 한다');
-  assert.ok(footRow > qtRow, '설명줄보다 위여야 한다');
+  const nameCheckRow = 3 + 5 * 4 - 1 + 4;      // 이름 줄 바로 아래 체크 줄
+  sh._set(nameCheckRow, 2, true);
+  ctx.ceOnQtCheckbox({ range: sh.getRange(nameCheckRow, 2) });
+  assert.strictEqual(ctx.__dialogs().length, 0, '이름 체크박스는 B열부터라 걸리지 않는다');
+});
+
+test('초기 설정이 묵상달력 트리거를 걸고, 두 번 걸지 않는다', () => {
+  const { ctx } = load();
+  const first = ctx.ceSetupAll();
+  assert.strictEqual(first.trigger, true);
+  const second = ctx.ceSetupAll();
+  assert.strictEqual(second.trigger, false, '이미 있으면 다시 만들지 않는다');
 });
 
 test("예전 '생명의 삶' 탭은 지운다", () => {

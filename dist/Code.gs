@@ -1380,15 +1380,57 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
  * 아이디와 비밀번호는 넣지 않습니다. 브라우저에 로그인해 두시면 그 세션을 씁니다.
  */
 
-/** 배정표 맨 아래에 묵상 달력 여는 줄을 놓습니다. */
+var CE_QT_LABEL = '생명의 삶 묵상달력 열기  \u25B6';
+
+/**
+ * 배정표 맨 아래에 묵상 달력 여는 줄을 놓습니다.
+ * A열 체크박스를 누르면 시트 위에 창이 뜹니다.
+ *
+ * 구글 시트에서는 셀을 그냥 눌러도 아무 일이 일어나지 않습니다.
+ * 스크립트를 부르려면 체크박스처럼 '고쳐지는' 것이어야 합니다.
+ */
 function ceWriteQtLink(sh, row, totalCols) {
-  sh.getRange(row, 1, 1, totalCols).merge()
-    .setFormula('=HYPERLINK("' + CE_QT_URL + '","생명의 삶 묵상달력 열기  \u25B6")')
+  sh.getRange(row, 1).insertCheckboxes()
+    .setBackground('#588fad').setHorizontalAlignment('center');
+  sh.getRange(row, CE_OUT.FIRST_COL, 1, totalCols - 1).merge()
+    .setValue(CE_QT_LABEL)
     .setBackground('#588fad').setFontColor('#ffffff')
     .setFontSize(11).setFontWeight('bold')
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
   sh.setRowHeight(row, 34);
   return row;
+}
+
+/**
+ * 배정표의 묵상달력 체크박스를 눌렀을 때 창을 띄웁니다.
+ *
+ * 일반 onEdit 에서는 창을 띄울 수 없어서 설치형 트리거로 겁니다.
+ * [초기 설정 만들기] 를 누를 때 한 번 만들어 둡니다.
+ */
+function ceOnQtCheckbox(e) {
+  if (!e || !e.range) return;
+  if (e.range.getColumn() !== 1) return;
+  if (e.range.getValue() !== true) return;
+
+  var sh = e.range.getSheet();
+  if (!ceIsMonthSheetName(sh.getName())) return;
+
+  var row = e.range.getRow();
+  if (String(sh.getRange(row, CE_OUT.FIRST_COL).getValue()).indexOf('생명의 삶') !== 0) return;
+
+  e.range.setValue(false);          // 다음에 또 누를 수 있도록 되돌립니다
+  ceShowQt();
+}
+
+/** 묵상달력 체크박스를 받아 줄 설치형 트리거를 만듭니다. (있으면 다시 만들지 않습니다) */
+function ceInstallQtTrigger() {
+  var ss = ceSS();
+  var existing = ScriptApp.getUserTriggers(ss);
+  for (var i = 0; i < existing.length; i++) {
+    if (existing[i].getHandlerFunction() === 'ceOnQtCheckbox') return false;
+  }
+  ScriptApp.newTrigger('ceOnQtCheckbox').forSpreadsheet(ss).onEdit().create();
+  return true;
 }
 
 /** 시트 위에 큰 창을 띄워 그 안에 묵상 달력을 넣습니다. */
@@ -1461,7 +1503,14 @@ function ceSetupAll() {
     created.push(CE_TAB.CALENDAR);
   }
   ceOrderTabs(null);
-  return { created: created, updated: updated, renamed: renamed };
+
+  var trigger = false;
+  try {
+    trigger = ceInstallQtTrigger();
+  } catch (err) {
+    // 트리거를 못 걸어도 나머지는 그대로 됩니다.
+  }
+  return { created: created, updated: updated, renamed: renamed, trigger: trigger };
 }
 
 /** 이미 있는 설정 탭에 빠진 항목만 아래에 덧붙입니다. */
@@ -1613,7 +1662,6 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('새벽예배 배정')
     .addItem('새벽설교 배정표 만들기', 'ceMenuGenerate')
-    .addItem('생명의 삶 열기', 'ceShowQt')
     .addSeparator()
     .addItem('초기 설정 만들기', 'ceMenuSetup')
     .addToUi();
@@ -1667,6 +1715,11 @@ function ceMenuSetup() {
       msg.push('');
       msg.push('※ 이제 쓰지 않는 탭이 남아 있습니다: ' + stale.join(', '));
       msg.push('   지우셔도 배정에는 아무 영향이 없습니다.');
+    }
+
+    if (res.trigger) {
+      msg.push('');
+      msg.push('배정표 아래 [생명의 삶 묵상달력 열기] 체크박스가 동작하도록 설정했습니다.');
     }
 
     msg.push('');
