@@ -737,7 +737,7 @@ test('아래 설명줄은 이름 목록보다 뒤에 온다', () => {
 /** 배정표에서 묵상달력 링크가 있는 줄을 찾습니다. */
 function findQtRow(sh) {
   for (let r = 1; r <= 60; r++) {
-    if (String(sh._get(r, 2)).indexOf('생명의 삶 묵상달력 열기') === 0) return r;
+    if (String(sh._get(r, 1)).indexOf('생명의 삶 묵상달력 열기') === 0) return r;
   }
   return 0;
 }
@@ -749,7 +749,8 @@ test('배정표 아래에 묵상달력 줄과 체크박스가 들어간다', () 
 
   const row = findQtRow(sh);
   assert.ok(row > 0, '묵상달력 줄을 찾지 못했다');
-  assert.ok(sh.checkboxes.has(`${row},1`), 'A열에 체크박스가 있어야 한다');
+  assert.ok(sh.checkboxes.has(`${row},7`), '맨 오른쪽(G열)에 체크박스가 있어야 한다');
+  assert.ok(!sh.checkboxes.has(`${row},1`), 'A열에는 없어야 한다');
 });
 
 test('체크박스를 누르면 창이 뜨고 체크는 다시 풀린다', () => {
@@ -758,14 +759,14 @@ test('체크박스를 누르면 창이 뜨고 체크는 다시 풀린다', () =>
   const sh = ss.getSheetByName('2026-09');
   const row = findQtRow(sh);
 
-  sh._set(row, 1, true);
-  ctx.ceOnQtCheckbox({ range: sh.getRange(row, 1) });
+  sh._set(row, 7, true);
+  ctx.ceOnQtCheckbox({ range: sh.getRange(row, 7) });
 
   const dialogs = ctx.__dialogs();
   assert.strictEqual(dialogs.length, 1, '창이 한 번 떠야 한다');
   assert.ok(dialogs[0].html.indexOf('duranno.com/qt/view/calendar.asp') > 0, dialogs[0].html);
   assert.strictEqual(dialogs[0].title.indexOf('생명의 삶'), 0, dialogs[0].title);
-  assert.strictEqual(sh._get(row, 1), false, '체크가 풀려 있어야 다시 누를 수 있다');
+  assert.strictEqual(sh._get(row, 7), false, '체크가 풀려 있어야 다시 누를 수 있다');
 });
 
 test('체크를 푸는 편집이나 다른 칸에는 반응하지 않는다', () => {
@@ -774,8 +775,8 @@ test('체크를 푸는 편집이나 다른 칸에는 반응하지 않는다', ()
   const sh = ss.getSheetByName('2026-09');
   const row = findQtRow(sh);
 
-  sh._set(row, 1, false);
-  ctx.ceOnQtCheckbox({ range: sh.getRange(row, 1) });     // 체크를 푸는 경우
+  sh._set(row, 7, false);
+  ctx.ceOnQtCheckbox({ range: sh.getRange(row, 7) });     // 체크를 푸는 경우
   ctx.ceOnQtCheckbox({ range: sh.getRange(4, 3) });        // 표 한가운데
   ctx.ceOnQtCheckbox({ range: ss.getSheetByName('로테이션').getRange(1, 1) });
 
@@ -788,9 +789,9 @@ test('이름 체크박스를 눌러도 묵상달력 창이 뜨지 않는다', ()
   const sh = ss.getSheetByName('2026-09');
 
   const nameCheckRow = 3 + 5 * 4 - 1 + 4;      // 이름 줄 바로 아래 체크 줄
-  sh._set(nameCheckRow, 2, true);
-  ctx.ceOnQtCheckbox({ range: sh.getRange(nameCheckRow, 2) });
-  assert.strictEqual(ctx.__dialogs().length, 0, '이름 체크박스는 B열부터라 걸리지 않는다');
+  sh._set(nameCheckRow, 7, true);              // 같은 G열이라도
+  ctx.ceOnQtCheckbox({ range: sh.getRange(nameCheckRow, 7) });
+  assert.strictEqual(ctx.__dialogs().length, 0, '그 줄 왼쪽에 묵상달력 글이 없으면 걸리지 않는다');
 });
 
 test('초기 설정이 묵상달력 트리거를 걸고, 두 번 걸지 않는다', () => {

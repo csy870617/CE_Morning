@@ -11,19 +11,19 @@ var CE_QT_LABEL = '생명의 삶 묵상달력 열기  \u25B6';
 
 /**
  * 배정표 맨 아래에 묵상 달력 여는 줄을 놓습니다.
- * A열 체크박스를 누르면 시트 위에 창이 뜹니다.
+ * 맨 오른쪽 칸의 체크박스를 누르면 시트 위에 창이 뜹니다.
  *
  * 구글 시트에서는 셀을 그냥 눌러도 아무 일이 일어나지 않습니다.
  * 스크립트를 부르려면 체크박스처럼 '고쳐지는' 것이어야 합니다.
  */
 function ceWriteQtLink(sh, row, totalCols) {
-  sh.getRange(row, 1).insertCheckboxes()
-    .setBackground('#588fad').setHorizontalAlignment('center');
-  sh.getRange(row, CE_OUT.FIRST_COL, 1, totalCols - 1).merge()
+  sh.getRange(row, 1, 1, totalCols - 1).merge()
     .setValue(CE_QT_LABEL)
     .setBackground('#588fad').setFontColor('#ffffff')
     .setFontSize(11).setFontWeight('bold')
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  sh.getRange(row, totalCols).insertCheckboxes()
+    .setBackground('#588fad').setHorizontalAlignment('center');
   sh.setRowHeight(row, 34);
   return row;
 }
@@ -36,14 +36,15 @@ function ceWriteQtLink(sh, row, totalCols) {
  */
 function ceOnQtCheckbox(e) {
   if (!e || !e.range) return;
-  if (e.range.getColumn() !== 1) return;
+  if (e.range.getColumn() !== CE_OUT.FIRST_COL + CE_OUT.COLS - 1) return;
   if (e.range.getValue() !== true) return;
 
   var sh = e.range.getSheet();
   if (!ceIsMonthSheetName(sh.getName())) return;
 
+  // 이름 체크박스도 같은 열에 올 수 있으므로, 그 줄 왼쪽에 붙은 글로 가려냅니다.
   var row = e.range.getRow();
-  if (String(sh.getRange(row, CE_OUT.FIRST_COL).getValue()).indexOf('생명의 삶') !== 0) return;
+  if (String(sh.getRange(row, 1).getValue()).indexOf('생명의 삶') !== 0) return;
 
   e.range.setValue(false);          // 다음에 또 누를 수 있도록 되돌립니다
   ceShowQt();
