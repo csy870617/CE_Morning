@@ -79,9 +79,10 @@ var CE_COLOR = {
   TITLE_BG: '#434343',
   HEAD_BG: '#588fad',
   BAND_BG: '#efefef',
-  WARN_BG: '#f4cccc',
-  HOLIDAY_BG: '#fff2cc',
-  PICK_BG: '#ffe599',
+  HOLIDAY_BG: '#f4cccc',        // 휴일 - 연한 빨강
+  WARN_BG: '#ea9999',           // 채우지 못한 칸 - 좀 더 진한 빨강
+  PICK_SERMON_BG: '#ffe599',    // 이름 체크: 설교자 줄 - 노랑
+  PICK_OTHER_BG: '#d9ead3',     // 이름 체크: 그 밖의 줄 - 연한 초록
   OUT_OF_MONTH: '#999999',
   BORDER: '#b7b7b7'
 };

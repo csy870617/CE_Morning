@@ -648,7 +648,7 @@ test('표 아래에 이름과 체크박스가 깔린다', () => {
 
   const lastTableRow = 3 + 5 * 4 - 1;          // 5주 x 4줄
   const p = pickerRows(sh, lastTableRow);
-  assert.ok(String(sh.getRange(p.label, 1).getValue()).indexOf('노랗게') >= 0,
+  assert.ok(String(sh.getRange(p.label, 1).getValue()).indexOf('설교는 노랑') >= 0,
     String(sh.getRange(p.label, 1).getValue()));
 
   // 이름 줄에 표에 나온 사람들이 있어야 한다
@@ -682,31 +682,47 @@ test('이름은 가나다 순이고 중복이 없다', () => {
   assert.deepStrictEqual(plain(shown), ['김목사', '박집사', '한목사']);
 });
 
-test('체크한 이름 칸을 노랗게 칠하는 규칙이 걸린다', () => {
+test('설교자 줄은 노랑, 나머지는 연한 초록 규칙이 걸린다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
 
   const rules = sh.getConditionalFormatRules();
-  assert.strictEqual(rules.length, 1, '규칙이 하나 걸려야 한다');
-  assert.strictEqual(rules[0].background, '#ffe599');
-  assert.ok(rules[0].formula.indexOf('COUNTIFS') >= 0, rules[0].formula);
-  assert.ok(rules[0].formula.indexOf('TRUE') >= 0, rules[0].formula);
-  assert.strictEqual(rules[0].ranges[0], 'B2:G26', '표부터 이름 목록까지만 잡아야 한다');
+  assert.strictEqual(rules.length, 2, '색깔 두 개짜리 규칙 둘');
+
+  const yellow = rules.filter(r => r.background === '#ffe599')[0];
+  const green = rules.filter(r => r.background === '#d9ead3')[0];
+  assert.ok(yellow, '노랑 규칙이 있어야 한다');
+  assert.ok(green, '연한 초록 규칙이 있어야 한다');
+
+  // 설교자 줄은 각 주 블록의 두 번째 줄: 4, 8, 12, 16, 20
+  assert.deepStrictEqual(plain(yellow.ranges),
+    ['B4:G4', 'B8:G8', 'B12:G12', 'B16:G16', 'B20:G20']);
+  // 방송실 + 수요/토요 는 그 아래 두 줄씩
+  ['B5:G6', 'B9:G10', 'B13:G14', 'B17:G18', 'B21:G22'].forEach(r => {
+    assert.ok(green.ranges.indexOf(r) >= 0, r + ' 이 초록 규칙에 없다');
+  });
 });
 
-test('사람이 많으면 여러 줄로 나뉘고 규칙이 그만큼 이어붙는다', () => {
-  const { ctx, ss } = prepared({
-    '설교': ['가목사', '나목사', '다목사', '라목사'],
-    '방송': ['마집사', '바집사', '사집사'],
-    '수요현관': ['아권사'], '토요찬양': ['자집사']
+test('조건식이 자리에 휘둘리지 않도록 지금 칸을 가리킨다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  const rules = ss.getSheetByName('2026-09').getConditionalFormatRules();
+  rules.forEach(r => {
+    assert.ok(r.formula.indexOf('INDIRECT(ADDRESS(ROW(),COLUMN()))') > 0, r.formula);
+    assert.ok(r.formula.indexOf('COUNTIFS') > 0, r.formula);
+    assert.ok(r.formula.indexOf('TRUE') > 0, r.formula);
   });
+  // 두 규칙의 조건은 같고 색만 다르다
+  assert.strictEqual(rules[0].formula, rules[1].formula);
+});
+
+test('이름 칸도 초록으로 함께 물든다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
-
-  const rules = sh.getConditionalFormatRules();
-  const terms = rules[0].formula.split('COUNTIFS').length - 1;
-  assert.strictEqual(terms, 2, '9명이면 6+3 두 줄이므로 항이 둘이어야 한다');
+  const green = sh.getConditionalFormatRules().filter(r => r.background === '#d9ead3')[0];
+  assert.ok(green.ranges.indexOf('B25:D25') >= 0, plain(green.ranges).join(','));
 });
 
 test('다시 만들면 규칙이 겹쳐 쌓이지 않는다', () => {
@@ -714,7 +730,7 @@ test('다시 만들면 규칙이 겹쳐 쌓이지 않는다', () => {
   ctx.ceGenerateMonth(2026, 9);
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
-  assert.strictEqual(sh.getConditionalFormatRules().length, 1);
+  assert.strictEqual(sh.getConditionalFormatRules().length, 2);
 });
 
 test('아래 설명줄은 이름 목록보다 뒤에 온다', () => {
