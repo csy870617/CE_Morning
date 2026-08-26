@@ -737,69 +737,44 @@ test('아래 설명줄은 이름 목록보다 뒤에 온다', () => {
 /** 배정표에서 묵상달력 링크가 있는 줄을 찾습니다. */
 function findQtRow(sh) {
   for (let r = 1; r <= 60; r++) {
-    if (String(sh._get(r, 1)).indexOf('생명의 삶 묵상달력 열기') === 0) return r;
+    // 이제 =HYPERLINK(...) 수식이라 글자가 안쪽에 들어 있습니다.
+    if (String(sh._get(r, 1)).indexOf('생명의 삶 묵상달력 열기') >= 0) return r;
   }
-  return 0;
+  throw new Error('묵상달력 줄을 찾지 못했습니다');
 }
 
-test('배정표 아래에 묵상달력 줄과 체크박스가 들어간다', () => {
+test('배정표 아래에 묵상달력 링크가 들어간다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
 
   const row = findQtRow(sh);
-  assert.ok(row > 0, '묵상달력 줄을 찾지 못했다');
-  assert.ok(sh.checkboxes.has(`${row},7`), '맨 오른쪽(G열)에 체크박스가 있어야 한다');
-  assert.ok(!sh.checkboxes.has(`${row},1`), 'A열에는 없어야 한다');
+  const cell = String(sh._get(row, 1));
+  assert.ok(cell.indexOf('=HYPERLINK') === 0, cell);
+  assert.ok(cell.indexOf('duranno.com/qt/view/calendar.asp') > 0, cell);
 });
 
-test('체크박스를 누르면 창이 뜨고 체크는 다시 풀린다', () => {
+test('묵상달력 줄에는 체크박스가 없다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
   const row = findQtRow(sh);
-
-  sh._set(row, 7, true);
-  ctx.ceOnQtCheckbox({ range: sh.getRange(row, 7) });
-
-  const dialogs = ctx.__dialogs();
-  assert.strictEqual(dialogs.length, 1, '창이 한 번 떠야 한다');
-  assert.ok(dialogs[0].html.indexOf('duranno.com/qt/view/calendar.asp') > 0, dialogs[0].html);
-  assert.strictEqual(dialogs[0].title.indexOf('생명의 삶'), 0, dialogs[0].title);
-  assert.strictEqual(sh._get(row, 7), false, '체크가 풀려 있어야 다시 누를 수 있다');
+  for (let c = 1; c <= 7; c++) {
+    assert.ok(!sh.checkboxes.has(`${row},${c}`), `${c}열에 체크박스가 남아 있다`);
+  }
 });
 
-test('체크를 푸는 편집이나 다른 칸에는 반응하지 않는다', () => {
-  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+test('체크박스로 창을 띄우던 트리거를 걷어낸다', () => {
+  const { ctx } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  const ScriptApp = ctx.ScriptApp;
+  ScriptApp.newTrigger('ceOnQtCheckbox').forSpreadsheet().onEdit().create();
+  ScriptApp.newTrigger('다른것').forSpreadsheet().onEdit().create();
+  assert.strictEqual(ScriptApp.getUserTriggers().length, 2);
+
   ctx.ceGenerateMonth(2026, 9);
-  const sh = ss.getSheetByName('2026-09');
-  const row = findQtRow(sh);
 
-  sh._set(row, 7, false);
-  ctx.ceOnQtCheckbox({ range: sh.getRange(row, 7) });     // 체크를 푸는 경우
-  ctx.ceOnQtCheckbox({ range: sh.getRange(4, 3) });        // 표 한가운데
-  ctx.ceOnQtCheckbox({ range: ss.getSheetByName('로테이션').getRange(1, 1) });
-
-  assert.strictEqual(ctx.__dialogs().length, 0);
-});
-
-test('이름 체크박스를 눌러도 묵상달력 창이 뜨지 않는다', () => {
-  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
-  ctx.ceGenerateMonth(2026, 9);
-  const sh = ss.getSheetByName('2026-09');
-
-  const nameCheckRow = 3 + 5 * 4 - 1 + 4;      // 이름 줄 바로 아래 체크 줄
-  sh._set(nameCheckRow, 7, true);              // 같은 G열이라도
-  ctx.ceOnQtCheckbox({ range: sh.getRange(nameCheckRow, 7) });
-  assert.strictEqual(ctx.__dialogs().length, 0, '그 줄 왼쪽에 묵상달력 글이 없으면 걸리지 않는다');
-});
-
-test('초기 설정이 묵상달력 트리거를 걸고, 두 번 걸지 않는다', () => {
-  const { ctx } = load();
-  const first = ctx.ceSetupAll();
-  assert.strictEqual(first.trigger, true);
-  const second = ctx.ceSetupAll();
-  assert.strictEqual(second.trigger, false, '이미 있으면 다시 만들지 않는다');
+  const left = ScriptApp.getUserTriggers().map(t => t.getHandlerFunction());
+  assert.deepStrictEqual(plain(left), ['다른것'], '우리 것만 지우고 남의 것은 둔다');
 });
 
 test("예전 '생명의 삶' 탭은 지운다", () => {
@@ -844,7 +819,6 @@ test('예전 체크박스 자리에 글자가 들어가도 규칙이 남지 않�
   ctx.ceGenerateMonth(2026, 9);      // 다시 그리면
   const after = findQtRow(sh);
   assert.ok(!sh.checkboxes.has(`${after},1`), '글자가 들어갈 자리에 체크박스 규칙이 남으면 안 된다');
-  assert.ok(sh.checkboxes.has(`${after},7`), '체크박스는 오른쪽 끝에만 있어야 한다');
 });
 
 test('이름이 줄어들어 체크박스 줄이 짧아져도 규칙이 남지 않는다', () => {
@@ -866,14 +840,12 @@ test('이름이 줄어들어 체크박스 줄이 짧아져도 규칙이 남지 �
   rot._set(2, sermonCol, '가목사');
 
   ctx.ceGenerateMonth(2026, 9);
-  const qt = findQtRow(sh);
   sh.checkboxes.forEach(k => {
     const [r, c] = k.split(',').map(Number);
     const value = sh._get(r, c);
     assert.ok(value === false || value === true,
       `${k} 에 체크박스 규칙이 남았는데 값은 ${JSON.stringify(value)} 이다`);
   });
-  assert.ok(sh.checkboxes.has(`${qt},7`));
 });
 
 console.log('\n' + passed + ' passed');

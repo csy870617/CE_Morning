@@ -61,11 +61,6 @@ function ceMenuSetup() {
       msg.push('   지우셔도 배정에는 아무 영향이 없습니다.');
     }
 
-    if (res.trigger) {
-      msg.push('');
-      msg.push('배정표 아래 [생명의 삶 묵상달력 열기] 체크박스가 동작하도록 설정했습니다.');
-    }
-
     msg.push('');
     msg.push('[로테이션] 탭에 이름을 넣고, [설정] 탭의 로테이션 시작일을 확인한 뒤');
     msg.push('[새벽설교 배정표 만들기] 를 눌러 주세요.');

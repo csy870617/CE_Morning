@@ -43,6 +43,11 @@ function ceMonthSheetName(year, month) {
 function ceGenerateMonth(year, month) {
   ceRenameLegacyTabs();           // 예전 이름의 탭이 있으면 먼저 바꿔 둡니다
   ceRemoveQtTab();                // 예전 '생명의 삶' 탭이 남아 있으면 지웁니다
+  try {
+    ceRemoveQtTrigger();          // 이제 쓰지 않는 편집 트리거를 걷어냅니다
+  } catch (err) {
+    // 못 지워도 배정은 그대로 됩니다.
+  }
   ceSaveCalendar();               // 달력에 적어만 두고 아직 안 넘긴 내용까지 반영
 
   var cfg = ceReadConfig();

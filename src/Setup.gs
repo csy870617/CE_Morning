@@ -22,6 +22,11 @@ function ceSetupAll() {
   var updated = [];
   var renamed = ceRenameLegacyTabs();
   ceRemoveQtTab();                // 예전 '생명의 삶' 탭은 이제 쓰지 않습니다
+  try {
+    ceRemoveQtTrigger();          // 체크박스로 창을 띄우던 트리거도 걷어냅니다
+  } catch (err) {
+    // 못 지워도 나머지는 그대로 됩니다.
+  }
 
   if (ceSetupSettings()) created.push(CE_TAB.SETTINGS);
   else if (ceUpgradeSettings().length) updated.push(CE_TAB.SETTINGS);
@@ -39,13 +44,7 @@ function ceSetupAll() {
   }
   ceOrderTabs(null);
 
-  var trigger = false;
-  try {
-    trigger = ceInstallQtTrigger();
-  } catch (err) {
-    // 트리거를 못 걸어도 나머지는 그대로 됩니다.
-  }
-  return { created: created, updated: updated, renamed: renamed, trigger: trigger };
+  return { created: created, updated: updated, renamed: renamed };
 }
 
 /** 이미 있는 설정 탭에 빠진 항목만 아래에 덧붙입니다. */

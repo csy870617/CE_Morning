@@ -199,6 +199,11 @@ function makeContext() {
       ScriptApp: {
         _triggers: [],
         getUserTriggers() { return globalsRef.ScriptApp._triggers; },
+        deleteTrigger(t) {
+          const list = globalsRef.ScriptApp._triggers;
+          const i = list.indexOf(t);
+          if (i >= 0) list.splice(i, 1);
+        },
         newTrigger(fn) {
           const t = { fn, getHandlerFunction: () => fn };
           const builder = {
