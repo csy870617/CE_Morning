@@ -135,6 +135,7 @@ function makeSpreadsheet() {
     getSheetByName: n => sheets.filter(s => s.name === n)[0] || null,
     insertSheet(n) { const s = makeSheet(n); sheets.push(s); return s; },
     setActiveSheet(s) { active = s; return s; },
+    deleteSheet(s) { const i = sheets.indexOf(s); if (i >= 0) sheets.splice(i, 1); },
     getActiveSheet: () => active,
     toast() {},
     moveActiveSheet(pos) {

@@ -409,7 +409,6 @@ var CE_TAB = {
   SETTINGS: '설정',
   ROTATION: '로테이션',
   CALENDAR: '달력(예외자)',
-  QT: '생명의 삶',
   STORE: '_달력저장'
 };
 
@@ -422,7 +421,7 @@ var CE_LEGACY_TAB_NAMES = [
 ];
 
 /** 화면에 보이는 탭 순서 (월별 표는 이 앞에 옵니다). */
-var CE_TAB_ORDER = ['달력(예외자)', '로테이션', '설정', '생명의 삶'];
+var CE_TAB_ORDER = ['달력(예외자)', '로테이션', '설정'];
 
 function ceRenameLegacyTabs() {
   var ss = ceSS();
@@ -1027,6 +1026,7 @@ function ceMonthSheetName(year, month) {
  */
 function ceGenerateMonth(year, month) {
   ceRenameLegacyTabs();           // 예전 이름의 탭이 있으면 먼저 바꿔 둡니다
+  ceRemoveQtTab();                // 예전 '생명의 삶' 탭이 남아 있으면 지웁니다
   ceSaveCalendar();               // 달력에 적어만 두고 아직 안 넘긴 내용까지 반영
 
   var cfg = ceReadConfig();
@@ -1352,8 +1352,9 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
     .setBorder(true, true, true, true, true, true, CE_COLOR.BORDER, SpreadsheetApp.BorderStyle.SOLID);
 
   var pickerEnd = ceWriteNamePicker(sh, lastRow + 2, totalCols, grid, sched, cfg);
+  var qtRow = ceWriteQtLink(sh, pickerEnd + 2, totalCols);
 
-  var footRow = pickerEnd + 2;
+  var footRow = qtRow + 2;
   sh.getRange(footRow, 1, 1, totalCols).merge()
     .setValue('자동 생성 · 기준일 ' + cfg.anchor + ' · ' + ceRotationSummary(rot) +
       ' · ' + Utilities.formatDate(new Date(), ceTz(), 'yyyy-MM-dd HH:mm'))
@@ -1371,48 +1372,23 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
 /* ===== Qt.gs ===== */
 
 /**
- * "생명의 삶" 탭 - 두란노 QT 묵상 달력으로 건너가는 자리.
+ * 생명의 삶(두란노 QT) 묵상 달력.
  *
- * 구글 시트의 탭 안에는 웹페이지를 띄울 수 없습니다. 셀에는 값과 이미지만
- * 들어갑니다. 그래서 두 가지를 둡니다.
+ * 배정표 맨 아래에 여는 링크를 두고, 메뉴에서는 시트 위 창으로도 열 수 있게 합니다.
+ * 구글 시트의 탭 안에는 웹페이지를 띄울 수 없어서 이렇게 합니다.
  *
- *   1) 이 탭의 링크 - 누르면 브라우저 새 탭에서 열립니다. 항상 됩니다.
- *   2) 메뉴 [생명의 삶 열기] - 시트 위에 큰 창을 띄워 그 안에 페이지를 넣습니다.
- *      브라우저가 서드파티 쿠키를 막고 있으면 로그인 화면이 뜰 수 있습니다.
+ * 아이디와 비밀번호는 넣지 않습니다. 브라우저에 로그인해 두시면 그 세션을 씁니다.
  */
 
-function ceSetupQt() {
-  if (ceSheet(CE_TAB.QT, false)) return false;
-  var sh = ceSheet(CE_TAB.QT, true);
-
-  sh.getRange(1, 1, 1, 4).merge()
-    .setValue('생명의 삶 · 묵상 달력')
-    .setBackground(CE_COLOR.TITLE_BG).setFontColor('#ffffff')
-    .setFontSize(13).setFontWeight('bold').setHorizontalAlignment('center');
-
-  sh.getRange(3, 1, 1, 4).merge()
-    .setFormula('=HYPERLINK("' + CE_QT_URL + '","생명의 삶 묵상 달력 열기  ▶")')
+/** 배정표 맨 아래에 묵상 달력 여는 줄을 놓습니다. */
+function ceWriteQtLink(sh, row, totalCols) {
+  sh.getRange(row, 1, 1, totalCols).merge()
+    .setFormula('=HYPERLINK("' + CE_QT_URL + '","생명의 삶 묵상달력 열기  \u25B6")')
     .setBackground('#588fad').setFontColor('#ffffff')
-    .setFontSize(12).setFontWeight('bold')
+    .setFontSize(11).setFontWeight('bold')
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
-  sh.setRowHeight(3, 44);
-
-  var lines = [
-    '위 칸을 누르면 브라우저 새 탭에서 열립니다.',
-    '',
-    '메뉴 [새벽예배 배정 → 생명의 삶 열기] 를 쓰면 시트를 벗어나지 않고',
-    '창 안에서 볼 수 있습니다. 다만 브라우저가 다른 사이트 쿠키를 막고 있으면',
-    '창 안에 로그인 화면이 뜰 수 있습니다. 그럴 때는 위 링크로 여세요.',
-    '',
-    '두란노 로그인은 브라우저에 한 번 해 두시면 계속 유지됩니다.',
-    '이 시트에는 아이디와 비밀번호를 넣지 않았습니다.'
-  ];
-  sh.getRange(5, 1, lines.length, 1).setValues(lines.map(function (t) { return [t]; }))
-    .setFontColor('#666666');
-
-  sh.setColumnWidth(1, 520);
-  for (var c = 2; c <= 4; c++) sh.setColumnWidth(c, 60);
-  return true;
+  sh.setRowHeight(row, 34);
+  return row;
 }
 
 /** 시트 위에 큰 창을 띄워 그 안에 묵상 달력을 넣습니다. */
@@ -1428,6 +1404,19 @@ function ceShowQt() {
   SpreadsheetApp.getUi().showModalDialog(
     HtmlService.createHtmlOutput(html).setWidth(1000).setHeight(700),
     '생명의 삶 · 묵상 달력');
+}
+
+/**
+ * 예전에 만들던 '생명의 삶' 탭이 남아 있으면 지웁니다.
+ * 우리가 만든 그 탭이 맞는지 제목으로 확인하고 지웁니다.
+ */
+function ceRemoveQtTab() {
+  var ss = ceSS();
+  var sh = ss.getSheetByName('생명의 삶');
+  if (!sh) return false;
+  if (String(sh.getRange(1, 1).getValue()).indexOf('생명의 삶') !== 0) return false;
+  ss.deleteSheet(sh);
+  return true;
 }
 
 /* ===== Setup.gs ===== */
@@ -1455,6 +1444,7 @@ function ceSetupAll() {
   var created = [];
   var updated = [];
   var renamed = ceRenameLegacyTabs();
+  ceRemoveQtTab();                // 예전 '생명의 삶' 탭은 이제 쓰지 않습니다
 
   if (ceSetupSettings()) created.push(CE_TAB.SETTINGS);
   else if (ceUpgradeSettings().length) updated.push(CE_TAB.SETTINGS);
@@ -1464,8 +1454,6 @@ function ceSetupAll() {
     var added = ceUpgradeRotation();
     if (added.length) updated.push(CE_TAB.ROTATION + ' (' + added.join(', ') + ' 추가)');
   }
-
-  if (ceSetupQt()) created.push(CE_TAB.QT);
 
   if (!ceSheet(CE_TAB.CALENDAR, false)) {
     var today = new Date();

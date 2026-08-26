@@ -6,7 +6,6 @@ var CE_TAB = {
   SETTINGS: '설정',
   ROTATION: '로테이션',
   CALENDAR: '달력(예외자)',
-  QT: '생명의 삶',
   STORE: '_달력저장'
 };
 
@@ -19,7 +18,7 @@ var CE_LEGACY_TAB_NAMES = [
 ];
 
 /** 화면에 보이는 탭 순서 (월별 표는 이 앞에 옵니다). */
-var CE_TAB_ORDER = ['달력(예외자)', '로테이션', '설정', '생명의 삶'];
+var CE_TAB_ORDER = ['달력(예외자)', '로테이션', '설정'];
 
 function ceRenameLegacyTabs() {
   var ss = ceSS();

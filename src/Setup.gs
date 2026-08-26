@@ -21,6 +21,7 @@ function ceSetupAll() {
   var created = [];
   var updated = [];
   var renamed = ceRenameLegacyTabs();
+  ceRemoveQtTab();                // 예전 '생명의 삶' 탭은 이제 쓰지 않습니다
 
   if (ceSetupSettings()) created.push(CE_TAB.SETTINGS);
   else if (ceUpgradeSettings().length) updated.push(CE_TAB.SETTINGS);
@@ -30,8 +31,6 @@ function ceSetupAll() {
     var added = ceUpgradeRotation();
     if (added.length) updated.push(CE_TAB.ROTATION + ' (' + added.join(', ') + ' 추가)');
   }
-
-  if (ceSetupQt()) created.push(CE_TAB.QT);
 
   if (!ceSheet(CE_TAB.CALENDAR, false)) {
     var today = new Date();

@@ -42,6 +42,7 @@ function ceMonthSheetName(year, month) {
  */
 function ceGenerateMonth(year, month) {
   ceRenameLegacyTabs();           // 예전 이름의 탭이 있으면 먼저 바꿔 둡니다
+  ceRemoveQtTab();                // 예전 '생명의 삶' 탭이 남아 있으면 지웁니다
   ceSaveCalendar();               // 달력에 적어만 두고 아직 안 넘긴 내용까지 반영
 
   var cfg = ceReadConfig();
@@ -367,8 +368,9 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
     .setBorder(true, true, true, true, true, true, CE_COLOR.BORDER, SpreadsheetApp.BorderStyle.SOLID);
 
   var pickerEnd = ceWriteNamePicker(sh, lastRow + 2, totalCols, grid, sched, cfg);
+  var qtRow = ceWriteQtLink(sh, pickerEnd + 2, totalCols);
 
-  var footRow = pickerEnd + 2;
+  var footRow = qtRow + 2;
   sh.getRange(footRow, 1, 1, totalCols).merge()
     .setValue('자동 생성 · 기준일 ' + cfg.anchor + ' · ' + ceRotationSummary(rot) +
       ' · ' + Utilities.formatDate(new Date(), ceTz(), 'yyyy-MM-dd HH:mm'))
