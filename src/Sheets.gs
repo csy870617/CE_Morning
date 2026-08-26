@@ -6,8 +6,12 @@ var CE_TAB = {
   SETTINGS: '설정',
   ROTATION: '로테이션',
   CALENDAR: '달력(예외자)',
+  QT: '생명의 삶',
   STORE: '_달력저장'
 };
+
+/** 생명의 삶(두란노 QT) 묵상 달력 주소 */
+var CE_QT_URL = 'https://www.duranno.com/qt/view/calendar.asp';
 
 /** 예전에 쓰던 탭 이름. 열어 보고 있으면 새 이름으로 바꿔 줍니다. */
 var CE_LEGACY_TAB_NAMES = [
@@ -15,7 +19,7 @@ var CE_LEGACY_TAB_NAMES = [
 ];
 
 /** 화면에 보이는 탭 순서 (월별 표는 이 앞에 옵니다). */
-var CE_TAB_ORDER = ['달력(예외자)', '로테이션', '설정'];
+var CE_TAB_ORDER = ['달력(예외자)', '로테이션', '설정', '생명의 삶'];
 
 function ceRenameLegacyTabs() {
   var ss = ceSS();

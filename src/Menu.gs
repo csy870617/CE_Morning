@@ -6,6 +6,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('새벽예배 배정')
     .addItem('새벽설교 배정표 만들기', 'ceMenuGenerate')
+    .addItem('생명의 삶 열기', 'ceShowQt')
     .addSeparator()
     .addItem('초기 설정 만들기', 'ceMenuSetup')
     .addToUi();

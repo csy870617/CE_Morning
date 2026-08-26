@@ -31,6 +31,8 @@ function ceSetupAll() {
     if (added.length) updated.push(CE_TAB.ROTATION + ' (' + added.join(', ') + ' 추가)');
   }
 
+  if (ceSetupQt()) created.push(CE_TAB.QT);
+
   if (!ceSheet(CE_TAB.CALENDAR, false)) {
     var today = new Date();
     ceRenderCalendar(today.getFullYear(), today.getMonth() + 1);

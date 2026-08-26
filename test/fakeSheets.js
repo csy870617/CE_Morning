@@ -30,6 +30,8 @@ function makeRange(sheet, row, col, numRows, numCols) {
     getColumn: () => col,
     getNumRows: () => numRows,
     setNote(v) { sheet.notes.set(`${row},${col}`, v); return r; },
+    setFormula(f) { sheet._set(row, col, f); return r; },
+    setVerticalAlignment() { return r; },
     clearContent() {
       for (let i = 0; i < numRows; i++) {
         for (let j = 0; j < numCols; j++) sheet._set(row + i, col + j, '');

@@ -6,7 +6,7 @@ const path = require('path');
 const vm = require('vm');
 const { makeContext } = require('./fakeSheets');
 
-const FILES = ['Rotation.gs', 'Sheets.gs', 'Calendar.gs', 'Render.gs', 'Setup.gs', 'Menu.gs'];
+const FILES = ['Rotation.gs', 'Sheets.gs', 'Calendar.gs', 'Render.gs', 'Qt.gs', 'Setup.gs', 'Menu.gs'];
 
 function load() {
   const { ss, globals } = makeContext();
@@ -335,7 +335,7 @@ test('달력 저장용 숨김 탭이 생기고 숨겨져 있다', () => {
   const store = ss.getSheetByName('_달력저장');
   assert.ok(store, '저장 탭이 있어야 한다');
   assert.strictEqual(store.hidden, true);
-  assert.deepStrictEqual(plain(ss.visibleNames()), ['달력(예외자)', '로테이션', '설정']);
+  assert.deepStrictEqual(plain(ss.visibleNames()), ['달력(예외자)', '로테이션', '설정', '생명의 삶']);
 });
 
 test('명단이 비어 있으면 안내와 함께 멈춘다', () => {
@@ -448,11 +448,11 @@ test("예전 '달력' 탭은 '달력(예외자)' 로 이름이 바뀐다", () =>
   assert.strictEqual(String(old._get(1, 2)), '2026-09', '내용은 그대로여야 한다');
 });
 
-test('탭 순서가 표 → 달력(예외자) → 로테이션 → 설정 이 된다', () => {
+test('탭 순서가 표 → 달력(예외자) → 로테이션 → 설정 → 생명의 삶 이 된다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
   assert.deepStrictEqual(plain(ss.visibleNames()),
-    ['2026-09', '달력(예외자)', '로테이션', '설정']);
+    ['2026-09', '달력(예외자)', '로테이션', '설정', '생명의 삶']);
 });
 
 test('달이 여러 개면 최근 달이 앞에, 방금 만든 달이 맨 앞에 온다', () => {
@@ -461,14 +461,15 @@ test('달이 여러 개면 최근 달이 앞에, 방금 만든 달이 맨 앞에
   ctx.ceGenerateMonth(2026, 11);
   ctx.ceGenerateMonth(2026, 10);        // 마지막으로 만든 것이 맨 앞
   assert.deepStrictEqual(plain(ss.visibleNames()),
-    ['2026-10', '2026-11', '2026-09', '달력(예외자)', '로테이션', '설정']);
+    ['2026-10', '2026-11', '2026-09', '달력(예외자)', '로테이션', '설정', '생명의 삶']);
 });
 
 test('쓰지 않는 기록 탭을 만들지 않는다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
   assert.strictEqual(ss.getSheetByName('_기록'), null, '기록 탭은 더 이상 만들지 않는다');
-  assert.deepStrictEqual(plain(ss.visibleNames()), ['2026-09', '달력(예외자)', '로테이션', '설정']);
+  assert.deepStrictEqual(plain(ss.visibleNames()),
+    ['2026-09', '달력(예외자)', '로테이션', '설정', '생명의 삶']);
 });
 
 
@@ -726,6 +727,49 @@ test('아래 설명줄은 이름 목록보다 뒤에 온다', () => {
   assert.ok(footRow > 0, '설명줄을 찾지 못했다');
   const p = pickerRows(sh, 3 + 5 * 4 - 1);
   assert.ok(footRow > p.firstCheck, '설명줄이 이름 목록 아래여야 한다');
+});
+
+
+/* ---------- 생명의 삶 탭 ---------- */
+
+test('초기 설정이 생명의 삶 탭을 만든다', () => {
+  const { ctx, ss } = load();
+  const res = ctx.ceSetupAll();
+  assert.ok(res.created.indexOf('생명의 삶') >= 0, plain(res.created).join(','));
+
+  const sh = ss.getSheetByName('생명의 삶');
+  assert.ok(sh);
+  assert.ok(String(sh.getRange(1, 1).getValue()).indexOf('생명의 삶') >= 0);
+
+  const link = String(sh.getRange(3, 1).getValue());
+  assert.ok(link.indexOf('HYPERLINK') === 1, link);
+  assert.ok(link.indexOf('duranno.com/qt/view/calendar.asp') > 0, link);
+});
+
+test('생명의 삶 탭은 맨 뒤에 온다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  assert.deepStrictEqual(plain(ss.visibleNames()),
+    ['2026-09', '달력(예외자)', '로테이션', '설정', '생명의 삶']);
+});
+
+test('시트에 아이디나 비밀번호를 넣지 않는다', () => {
+  const { ctx, ss } = load();
+  ctx.ceSetupAll();
+  const sh = ss.getSheetByName('생명의 삶');
+  const dump = sh.getRange(1, 1, 20, 4).getValues().join(' ');
+  ['churcheveryday', 'media1234', 'password', 'passwd'].forEach(secret => {
+    assert.ok(dump.toLowerCase().indexOf(secret) < 0, secret + ' 이 시트에 들어가 있다');
+  });
+});
+
+test('이미 있으면 다시 만들지 않는다', () => {
+  const { ctx, ss } = load();
+  ctx.ceSetupAll();
+  ss.getSheetByName('생명의 삶')._set(10, 1, '내가 적은 메모');
+  const res = ctx.ceSetupAll();
+  assert.ok(res.created.indexOf('생명의 삶') < 0, '두 번째에는 만들지 않는다');
+  assert.strictEqual(String(ss.getSheetByName('생명의 삶')._get(10, 1)), '내가 적은 메모');
 });
 
 console.log('\n' + passed + ' passed');
