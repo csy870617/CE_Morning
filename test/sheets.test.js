@@ -626,4 +626,106 @@ test('다른 달에 적힌 오타는 이번 달 배정에서 알리지 않는다
   assert.deepStrictEqual(plain(out.notes), [], out.notes.join(' / '));
 });
 
+
+/* ---------- 이름 체크박스로 강조하기 ---------- */
+
+function pickerRows(sh, lastTableRow) {
+  // 표 아래 안내줄 다음부터 이름/체크박스 줄이 짝으로 이어집니다.
+  return { label: lastTableRow + 2, firstName: lastTableRow + 3, firstCheck: lastTableRow + 4 };
+}
+
+test('표 아래에 이름과 체크박스가 깔린다', () => {
+  const { ctx, ss } = prepared({
+    '설교': ['김목사', '이목사'], '방송': ['정집사', '한집사'],
+    '토요설교': ['강목사'], '토요방송': ['임집사'],
+    '수요현관': ['오권사'], '토요찬양': ['서집사']
+  });
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+
+  const lastTableRow = 3 + 5 * 4 - 1;          // 5주 x 4줄
+  const p = pickerRows(sh, lastTableRow);
+  assert.ok(String(sh.getRange(p.label, 1).getValue()).indexOf('노랗게') >= 0,
+    String(sh.getRange(p.label, 1).getValue()));
+
+  // 이름 줄에 표에 나온 사람들이 있어야 한다
+  const shown = [];
+  for (let r = p.firstName; r <= p.firstName + 6; r += 2) {
+    for (let c = 2; c <= 7; c++) {
+      const v = String(sh._get(r, c)).trim();
+      if (v && v !== 'false' && v !== 'true') shown.push(v);
+    }
+  }
+  ['김목사', '이목사', '정집사', '한집사', '강목사', '임집사', '오권사', '서집사']
+    .forEach(n => assert.ok(shown.indexOf(n) >= 0, n + ' 이 목록에 없다'));
+
+  // 이름 바로 아래 칸은 체크박스여야 한다
+  assert.ok(sh.checkboxes.has(`${p.firstCheck},2`), '첫 이름 아래에 체크박스가 있어야 한다');
+});
+
+test('이름은 가나다 순이고 중복이 없다', () => {
+  const { ctx, ss } = prepared({
+    '설교': ['한목사', '김목사'], '방송': ['김목사', '박집사']   // 김목사가 두 명단에 있음
+  });
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  const p = pickerRows(sh, 3 + 5 * 4 - 1);
+
+  const shown = [];
+  for (let c = 2; c <= 7; c++) {
+    const v = String(sh._get(p.firstName, c)).trim();
+    if (v) shown.push(v);
+  }
+  assert.deepStrictEqual(plain(shown), ['김목사', '박집사', '한목사']);
+});
+
+test('체크한 이름 칸을 노랗게 칠하는 규칙이 걸린다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+
+  const rules = sh.getConditionalFormatRules();
+  assert.strictEqual(rules.length, 1, '규칙이 하나 걸려야 한다');
+  assert.strictEqual(rules[0].background, '#ffe599');
+  assert.ok(rules[0].formula.indexOf('COUNTIFS') >= 0, rules[0].formula);
+  assert.ok(rules[0].formula.indexOf('TRUE') >= 0, rules[0].formula);
+  assert.strictEqual(rules[0].ranges[0], 'B2:G26', '표부터 이름 목록까지만 잡아야 한다');
+});
+
+test('사람이 많으면 여러 줄로 나뉘고 규칙이 그만큼 이어붙는다', () => {
+  const { ctx, ss } = prepared({
+    '설교': ['가목사', '나목사', '다목사', '라목사'],
+    '방송': ['마집사', '바집사', '사집사'],
+    '수요현관': ['아권사'], '토요찬양': ['자집사']
+  });
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+
+  const rules = sh.getConditionalFormatRules();
+  const terms = rules[0].formula.split('COUNTIFS').length - 1;
+  assert.strictEqual(terms, 2, '9명이면 6+3 두 줄이므로 항이 둘이어야 한다');
+});
+
+test('다시 만들면 규칙이 겹쳐 쌓이지 않는다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  assert.strictEqual(sh.getConditionalFormatRules().length, 1);
+});
+
+test('아래 설명줄은 이름 목록보다 뒤에 온다', () => {
+  const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+
+  let footRow = 0;
+  for (let r = 20; r <= 40; r++) {
+    if (String(sh._get(r, 1)).indexOf('자동 생성') === 0) footRow = r;
+  }
+  assert.ok(footRow > 0, '설명줄을 찾지 못했다');
+  const p = pickerRows(sh, 3 + 5 * 4 - 1);
+  assert.ok(footRow > p.firstCheck, '설명줄이 이름 목록 아래여야 한다');
+});
+
 console.log('\n' + passed + ' passed');

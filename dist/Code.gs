@@ -481,6 +481,7 @@ var CE_COLOR = {
   BAND_BG: '#efefef',
   WARN_BG: '#f4cccc',
   HOLIDAY_BG: '#fff2cc',
+  PICK_BG: '#ffe599',
   OUT_OF_MONTH: '#999999',
   BORDER: '#b7b7b7'
 };
@@ -1152,6 +1153,95 @@ function ceMarkGap(sh, row, col) {
   sh.getRange(row, col).setBackground(CE_COLOR.WARN_BG).setNote('배정할 사람이 없습니다 (전원 예외)');
 }
 
+/** 이 달 표에 실제로 들어간 사람 이름을 모읍니다. (가나다 순) */
+function ceNamesInMonth(grid, sched, cfg) {
+  var seen = {};
+  var out = [];
+  for (var w = 0; w < grid.weeks.length; w++) {
+    for (var c = 0; c < CE_OUT.COLS; c++) {
+      var cell = grid.weeks[w][c];
+      var a = sched.byIso[cell.iso];
+      if (!a) continue;
+      var names = [a.preacher, a.broadcast, ceSpecialSlot(cell.dow, a, cfg).name];
+      for (var i = 0; i < names.length; i++) {
+        var n = String(names[i] || '').trim();
+        if (!n || seen[n]) continue;
+        seen[n] = true;
+        out.push(n);
+      }
+    }
+  }
+  out.sort();
+  return out;
+}
+
+/**
+ * 표 아래에 이름 목록을 깔고 그 밑에 체크박스를 붙입니다.
+ * 체크하면 그 사람 칸이 노랗게 보입니다. 색칠은 조건부 서식이 하므로
+ * 누르는 즉시 반응하고, 여러 명을 함께 켜 둘 수도 있습니다.
+ *
+ * 반환값은 이 구역이 끝나는 줄 번호입니다.
+ */
+function ceWriteNamePicker(sh, startRow, totalCols, grid, sched, cfg) {
+  sh.setConditionalFormatRules([]);
+
+  var names = ceNamesInMonth(grid, sched, cfg);
+  if (!names.length) return startRow - 1;
+
+  sh.getRange(startRow, 1, 1, totalCols).merge()
+    .setValue('이름을 체크하면 그 사람 칸이 노랗게 표시됩니다. (여러 명 동시에 가능, 다시 누르면 해제)')
+    .setFontSize(9).setFontColor('#666666');
+
+  var perLine = CE_OUT.COLS;                 // 표 너비에 맞춰 한 줄에 6명씩
+  var row = startRow + 1;
+  var pairs = [];                            // [{nameRow, checkRow, count}]
+
+  for (var i = 0; i < names.length; i += perLine) {
+    var chunk = names.slice(i, i + perLine);
+    var nameRow = row;
+    var checkRow = row + 1;
+
+    sh.getRange(nameRow, CE_OUT.FIRST_COL, 1, chunk.length).setValues([chunk])
+      .setBackground('#efefef').setFontWeight('bold')
+      .setHorizontalAlignment('center').setFontSize(10);
+    sh.getRange(checkRow, CE_OUT.FIRST_COL, 1, chunk.length)
+      .insertCheckboxes().setHorizontalAlignment('center');
+
+    pairs.push({ nameRow: nameRow, checkRow: checkRow, count: chunk.length });
+    row += 2;
+  }
+
+  var lastPickerRow = row - 1;
+  sh.getRange(startRow + 1, 1, lastPickerRow - startRow, totalCols)
+    .setBorder(true, true, true, true, true, true, CE_COLOR.BORDER, SpreadsheetApp.BorderStyle.SOLID);
+
+  ceApplyHighlightRule(sh, pairs, lastPickerRow);
+  return lastPickerRow;
+}
+
+/** 체크된 이름과 같은 칸을 노랗게 칠하는 조건부 서식 한 줄. */
+function ceApplyHighlightRule(sh, pairs, lastRow) {
+  // 표부터 이름 목록까지. 이름 칸도 함께 물들어서 지금 켜 둔 사람이 눈에 띕니다.
+  var body = sh.getRange(CE_OUT.DOW_ROW, CE_OUT.FIRST_COL,
+    lastRow - CE_OUT.DOW_ROW + 1, CE_OUT.COLS);
+  var topLeft = ceColumnLetter(CE_OUT.FIRST_COL) + CE_OUT.DOW_ROW;
+
+  var terms = pairs.map(function (p) {
+    var from = ceColumnLetter(CE_OUT.FIRST_COL);
+    var to = ceColumnLetter(CE_OUT.FIRST_COL + p.count - 1);
+    return 'COUNTIFS($' + from + '$' + p.nameRow + ':$' + to + '$' + p.nameRow + ',' + topLeft +
+      ',$' + from + '$' + p.checkRow + ':$' + to + '$' + p.checkRow + ',TRUE)';
+  });
+
+  var formula = '=AND(' + topLeft + '<>"",(' + terms.join('+') + ')>0)';
+  var rule = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied(formula)
+    .setBackground(CE_COLOR.PICK_BG)
+    .setRanges([body])
+    .build();
+  sh.setConditionalFormatRules([rule]);
+}
+
 /** '설교 4명 / 방송 3명 / ...' 처럼 채워진 명단만 적습니다. */
 function ceRotationSummary(rot) {
   var parts = [];
@@ -1257,7 +1347,9 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
   sh.getRange(CE_OUT.DOW_ROW, 1, lastRow - CE_OUT.DOW_ROW + 1, totalCols)
     .setBorder(true, true, true, true, true, true, CE_COLOR.BORDER, SpreadsheetApp.BorderStyle.SOLID);
 
-  var footRow = lastRow + 2;
+  var pickerEnd = ceWriteNamePicker(sh, lastRow + 2, totalCols, grid, sched, cfg);
+
+  var footRow = pickerEnd + 2;
   sh.getRange(footRow, 1, 1, totalCols).merge()
     .setValue('자동 생성 · 기준일 ' + cfg.anchor + ' · ' + ceRotationSummary(rot) +
       ' · ' + Utilities.formatDate(new Date(), ceTz(), 'yyyy-MM-dd HH:mm'))

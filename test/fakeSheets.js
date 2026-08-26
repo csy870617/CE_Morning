@@ -42,7 +42,21 @@ function makeRange(sheet, row, col, numRows, numCols) {
       return r;
     },
     breakApart() { sheet.merges = []; return r; },
-    setDataValidation(rule) { sheet.validations.set(`${row},${col}`, rule); return r; }
+    setDataValidation(rule) { sheet.validations.set(`${row},${col}`, rule); return r; },
+    insertCheckboxes() {
+      for (let i = 0; i < numRows; i++) {
+        for (let j = 0; j < numCols; j++) {
+          sheet.checkboxes.add(`${row + i},${col + j}`);
+          if (sheet._get(row + i, col + j) === '') sheet._set(row + i, col + j, false);
+        }
+      }
+      return r;
+    },
+    getA1Notation() {
+      const letter = n => { let out = '', k = n; while (k > 0) { out = String.fromCharCode(65 + (k - 1) % 26) + out; k = Math.floor((k - 1) / 26); } return out; },
+        a = `${letter(col)}${row}`;
+      return numRows === 1 && numCols === 1 ? a : `${a}:${letter(col + numCols - 1)}${row + numRows - 1}`;
+    }
   };
   ['setBackground', 'setFontColor', 'setFontWeight', 'setFontSize', 'setFontStyle',
    'setHorizontalAlignment', 'setWrap', 'setNumberFormat', 'setBorder'].forEach(m => { r[m] = () => r; });
@@ -55,6 +69,8 @@ function makeSheet(name) {
     cells: new Map(),
     notes: new Map(),
     validations: new Map(),
+    checkboxes: new Set(),
+    conditionalRules: [],
     merges: [],
     hidden: false,
     _key: (row, col) => `${row},${col}`,
@@ -94,7 +110,9 @@ function makeSheet(name) {
       sheet.cells = moved;
       return sheet;
     },
-    clear() { sheet.cells.clear(); sheet.notes.clear(); return sheet; },
+    clear() { sheet.cells.clear(); sheet.notes.clear(); sheet.checkboxes.clear(); return sheet; },
+    setConditionalFormatRules(rules) { sheet.conditionalRules = rules.slice(); return sheet; },
+    getConditionalFormatRules: () => sheet.conditionalRules.slice(),
     clearNotes() { sheet.notes.clear(); return sheet; },
     setColumnWidth: () => sheet,
     setRowHeight: () => sheet,
@@ -147,6 +165,16 @@ function makeContext() {
           return builder;
         },
         BorderStyle: { SOLID: 'SOLID' },
+        newConditionalFormatRule: () => {
+          const rule = { formula: null, background: null, ranges: [] };
+          const builder = {
+            whenFormulaSatisfied(f) { rule.formula = f; return builder; },
+            setBackground(c) { rule.background = c; return builder; },
+            setRanges(rs) { rule.ranges = rs.map(r => r.getA1Notation()); return builder; },
+            build: () => rule
+          };
+          return builder;
+        },
         getUi() { throw new Error('테스트에서는 UI 를 쓰지 않습니다'); }
       },
       Utilities: {

@@ -78,6 +78,7 @@ var CE_COLOR = {
   BAND_BG: '#efefef',
   WARN_BG: '#f4cccc',
   HOLIDAY_BG: '#fff2cc',
+  PICK_BG: '#ffe599',
   OUT_OF_MONTH: '#999999',
   BORDER: '#b7b7b7'
 };
