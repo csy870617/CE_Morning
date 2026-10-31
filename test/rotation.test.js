@@ -765,6 +765,132 @@ test('바꿀 상대가 그날 휴가면 넘어간다', () => {
   assert.strictEqual(days[3].preacher, '가');
 });
 
+/* ---------- 뒤쪽이 막히면 앞쪽(지난 주 금요일)과도 바꾼다 ---------- */
+
+test('뒤쪽 사람이 모두 월요일에 걸려 있으면 지난 주 금요일과 바꾼다', () => {
+  const days = [
+    mon('2026-09-07', '가', 'ㄱ'),
+    weekDay('2026-09-11', 5, '다', 'ㄹ'),     // 지난 주 금요일
+    mon('2026-09-14', '가', 'ㄴ'),            // 중복
+    weekDay('2026-09-15', 2, '가', 'ㅁ'),     // 뒤쪽이지만 '가' 는 이미 월요일에 섰다
+    weekDay('2026-09-16', 3, '가', 'ㅂ')
+  ];
+  R.ceEnforceMondayLimit(days, 'preacher', R.CE_ROLE.SERMON, [], '설교');
+  assert.strictEqual(days[2].preacher, '다', '지난 주 금요일 사람이 월요일로 온다');
+  assert.strictEqual(days[1].preacher, '가', '중복이던 사람이 금요일로 간다');
+  assert.ok(days[2].mondayNote.indexOf('2026-09-11') >= 0, days[2].mondayNote);
+  assert.strictEqual(days[2].mondayWarning, undefined, '풀렸으니 경고가 없어야 한다');
+});
+
+test('뒤쪽에 바꿀 사람이 있으면 앞쪽을 건드리지 않는다', () => {
+  const days = [
+    mon('2026-09-07', '가', 'ㄱ'),
+    weekDay('2026-09-11', 5, '다', 'ㄹ'),
+    mon('2026-09-14', '가', 'ㄴ'),
+    weekDay('2026-09-15', 2, '나', 'ㅁ')      // 뒤쪽에 쓸 수 있는 사람이 있다
+  ];
+  R.ceEnforceMondayLimit(days, 'preacher', R.CE_ROLE.SERMON, [], '설교');
+  assert.strictEqual(days[2].preacher, '나', '뒤쪽을 먼저 쓴다');
+  assert.strictEqual(days[1].preacher, '다', '앞쪽은 그대로 둔다');
+});
+
+test('앞쪽을 찾을 때도 토요일은 건너뛴다', () => {
+  const days = [
+    mon('2026-09-07', '가', 'ㄱ'),
+    weekDay('2026-09-11', 5, '다', 'ㄹ'),
+    satDay('2026-09-12', '강', '임'),
+    mon('2026-09-14', '가', 'ㄴ')
+  ];
+  R.ceEnforceMondayLimit(days, 'preacher', R.CE_ROLE.SERMON, [], '설교');
+  assert.strictEqual(days[2].preacher, '강', '토요일은 상대가 될 수 없다');
+  assert.strictEqual(days[3].preacher, '다');
+  assert.strictEqual(days[1].preacher, '가');
+});
+
+test('앞쪽에서 데려온 사람이 그날 방송실과 겹치면 더 앞으로 간다', () => {
+  const days = [
+    mon('2026-09-07', '가', 'ㄱ'),
+    weekDay('2026-09-10', 4, '다', 'ㄹ'),
+    weekDay('2026-09-11', 5, 'ㄴ', 'ㅁ'),     // 데려오면 9/14 설교자=방송실 이 된다
+    mon('2026-09-14', '가', 'ㄴ')
+  ];
+  R.ceEnforceMondayLimit(days, 'preacher', R.CE_ROLE.SERMON, [], '설교');
+  assert.strictEqual(days[2].preacher, 'ㄴ', '겹치는 상대는 건드리지 않는다');
+  assert.strictEqual(days[3].preacher, '다');
+  assert.strictEqual(days[1].preacher, '가');
+});
+
+test('앞쪽에서 데려올 사람이 그날 휴가면 더 앞으로 간다', () => {
+  const days = [
+    mon('2026-09-07', '가', 'ㄱ'),
+    weekDay('2026-09-10', 4, '다', 'ㄹ'),
+    weekDay('2026-09-11', 5, '나', 'ㅁ'),
+    mon('2026-09-14', '가', 'ㄴ')
+  ];
+  const ex = [{ name: '나', start: '2026-09-14', end: '2026-09-14', role: R.CE_ROLE.ALL }];
+  R.ceEnforceMondayLimit(days, 'preacher', R.CE_ROLE.SERMON, ex, '설교');
+  assert.strictEqual(days[3].preacher, '다');
+  assert.strictEqual(days[1].preacher, '가');
+  assert.strictEqual(days[2].preacher, '나', '휴가인 사람은 월요일로 데려오지 않는다');
+});
+
+test('백업도 뒤쪽이 막히면 앞쪽과 바꾼다', () => {
+  const days = [
+    mon('2026-09-07', '가', 'ㄱ'),
+    weekDay('2026-09-11', 5, '다', 'ㄹ'),
+    mon('2026-09-14', '나', 'ㄱ'),            // 백업 중복
+    weekDay('2026-09-15', 2, '마', 'ㄱ')      // 뒤쪽은 같은 'ㄱ' 뿐
+  ];
+  R.ceEnforceMondayLimit(days, 'broadcast', R.CE_ROLE.BROADCAST, [], '방송실');
+  assert.strictEqual(days[2].broadcast, 'ㄹ');
+  assert.strictEqual(days[1].broadcast, 'ㄱ');
+});
+
+test('앞쪽을 찾아도 달을 넘어가지는 않는다', () => {
+  const days = [
+    weekDay('2026-09-30', 3, '다', 'ㄹ'),     // 지난 달 - 써서는 안 된다
+    mon('2026-10-05', '가', 'ㄱ'),
+    mon('2026-10-12', '가', 'ㄴ')             // 중복인데 10월 안에는 상대가 없다
+  ];
+  R.ceEnforceMondayLimit(days, 'preacher', R.CE_ROLE.SERMON, [], '설교');
+  assert.strictEqual(days[0].preacher, '다', '지난 달은 건드리지 않는다');
+  assert.strictEqual(days[2].preacher, '가');
+  assert.ok(days[2].mondayWarning, '못 풀었으면 경고를 남긴다');
+});
+
+test('앞쪽과 바꾼 뒤에도 그 달 월요일에 같은 사람이 두 번 없다', () => {
+  const days = [
+    mon('2026-09-07', '가', 'ㄱ'),
+    weekDay('2026-09-11', 5, '다', 'ㄹ'),
+    mon('2026-09-14', '가', 'ㄴ'),
+    weekDay('2026-09-18', 5, '라', 'ㅁ'),
+    mon('2026-09-21', '가', 'ㅂ'),
+    weekDay('2026-09-25', 5, '마', 'ㅅ'),
+    mon('2026-09-28', '가', 'ㅇ')
+  ];
+  R.ceEnforceMondayLimit(days, 'preacher', R.CE_ROLE.SERMON, [], '설교');
+  const seen = {};
+  days.filter(d => d.dow === 1).forEach(d => {
+    assert.ok(!seen[d.preacher], d.iso + ' 의 ' + d.preacher + ' 가 월요일에 또 걸렸다');
+    seen[d.preacher] = true;
+  });
+});
+
+test('한 방향만 찾아보게도 할 수 있다 (ceFindMondaySwap)', () => {
+  const days = [
+    mon('2026-09-07', '가', 'ㄱ'),
+    weekDay('2026-09-11', 5, '다', 'ㄹ'),
+    mon('2026-09-14', '가', 'ㄴ')
+  ];
+  const seen = { '2026-09': { '가': true } };
+  assert.strictEqual(
+    R.ceFindMondaySwap(days, 2, 1, '2026-09', seen, 'preacher', R.CE_ROLE.SERMON, []),
+    null, '뒤쪽에는 상대가 없다');
+  assert.strictEqual(
+    R.ceFindMondaySwap(days, 2, -1, '2026-09', seen, 'preacher', R.CE_ROLE.SERMON, []),
+    days[1], '앞쪽에서는 금요일을 찾는다');
+});
+
 test('바꿀 상대가 아예 없으면 그대로 두고 알려 준다', () => {
   const days = [mon('2026-09-07', '가', 'ㄱ'), mon('2026-09-14', '가', 'ㄴ')];
   R.ceEnforceMondayLimit(days, 'preacher', R.CE_ROLE.SERMON, [], '설교');

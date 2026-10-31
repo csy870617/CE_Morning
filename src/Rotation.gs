@@ -240,32 +240,46 @@ function ceEnforceMondayLimit(days, field, role, exceptions, label) {
       continue;
     }
 
-    // 그 달 월요일에 이미 선 사람입니다. 뒤쪽 평일과 바꿔 봅니다.
-    var done = false;
-    for (var j = i + 1; j < days.length; j++) {
-      var b = days[j];
-      if (b.iso.slice(0, 7) !== month) break;       // 달을 넘기면서까지 찾지는 않습니다
-      if (b.dow === 1) continue;                    // 월요일끼리 바꾸면 뜻이 없습니다
-      if (b.swapGroup !== a.swapGroup) continue;    // 평일·토요 명단을 섞지 않습니다
-      if (!b[field] || seen[month][b[field]]) continue;
-      if (!ceMondaySwapOk(a, b, field, role, exceptions)) continue;
-
+    // 그 달 월요일에 이미 선 사람입니다.
+    // 먼저 뒤쪽(다음 날부터)에서 상대를 찾고, 뒤쪽 사람이 모두 이미 월요일에
+    // 걸려 있으면 앞쪽(지난 주 금요일부터 거슬러)에서도 찾아 봅니다.
+    var b = ceFindMondaySwap(days, i, 1, month, seen, field, role, exceptions) ||
+            ceFindMondaySwap(days, i, -1, month, seen, field, role, exceptions);
+    if (b) {
       var tmp = a[field];
       a[field] = b[field];
       b[field] = tmp;
       addNote(a, b.iso + ' 과 순서 바꿈 (월요일 중복)');
       addNote(b, a.iso + ' 과 순서 바꿈 (월요일 중복)');
-      done = true;
-      break;
     }
 
     seen[month][a[field]] = true;
-    if (!done) {
+    if (!b) {
       a.mondayWarning = (a.mondayWarning ? a.mondayWarning + ' / ' : '') +
         what + ' 담당이 그 달 월요일에 두 번 걸립니다 (바꿀 상대를 찾지 못했습니다)';
     }
   }
   return days;
+}
+
+/**
+ * 월요일 중복을 풀어 줄 상대를 한 방향으로 찾습니다.
+ *   step  1 = 다음 날부터 뒤로,  -1 = 지난 날부터 앞으로
+ * 같은 달 안에서만, 월요일이 아닌 날 중에서, 같은 요일 묶음(평일·토요)끼리만 찾습니다.
+ * 그 달 월요일에 이미 선 사람은 데려와도 또 중복이 되므로 건너뜁니다.
+ */
+function ceFindMondaySwap(days, from, step, month, seen, field, role, exceptions) {
+  var a = days[from];
+  for (var j = from + step; j >= 0 && j < days.length; j += step) {
+    var b = days[j];
+    if (b.iso.slice(0, 7) !== month) break;       // 달을 넘기면서까지 찾지는 않습니다
+    if (b.dow === 1) continue;                    // 월요일끼리 바꾸면 뜻이 없습니다
+    if (b.swapGroup !== a.swapGroup) continue;    // 평일·토요 명단을 섞지 않습니다
+    if (!b[field] || seen[month][b[field]]) continue;
+    if (!ceMondaySwapOk(a, b, field, role, exceptions)) continue;
+    return b;
+  }
+  return null;
 }
 
 function ceMondaySwapOk(a, b, field, role, exceptions) {
@@ -524,6 +538,7 @@ if (typeof module !== 'undefined') {
     cePickNext: cePickNext,
     ceResolveConflicts: ceResolveConflicts,
     ceEnforceMondayLimit: ceEnforceMondayLimit,
+    ceFindMondaySwap: ceFindMondaySwap,
     CE_USHER_PER_WEEK: CE_USHER_PER_WEEK,
     ceBuildSchedule: ceBuildSchedule,
     ceMonthGrid: ceMonthGrid
