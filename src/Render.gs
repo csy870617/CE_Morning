@@ -62,11 +62,15 @@ function ceGenerateMonth(year, month) {
   var ex = ceReadAllExceptions();
   var grid = ceMonthGrid(year, month);
 
-  if (grid.endIso < cfg.anchor) {
+  // 격자가 아니라 '그 달' 을 기준으로 봅니다. 격자에는 다음 달 날짜가 조금 섞여 있어서,
+  // 격자로 보면 통째로 기준일 앞인 달도 통과해 거의 빈 표가 만들어집니다.
+  if (ceIso(ceMakeDate(year, month + 1, 0)) < cfg.anchor) {
     throw new Error('로테이션 시작일(' + cfg.anchor + ') 보다 앞선 달입니다. 시작일을 앞으로 당겨 주세요.');
   }
 
-  var sched = ceBuildSchedule(cfg, rot, ex, grid.endIso);
+  // 격자보다 한 달 더 계산합니다. 마지막 주 겹침이 구간 밖을 못 봐서
+  // 같은 날짜가 달마다 달라지는 일을 막습니다. 그리는 것은 격자 범위만입니다.
+  var sched = ceBuildSchedule(cfg, rot, ex, grid.buildEndIso || grid.endIso);
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
 
   var sheetName = ceMonthSheetName(year, month);

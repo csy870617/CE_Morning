@@ -1371,6 +1371,119 @@ test('설명줄에는 색깔만 적고 괄호 설명은 붙이지 않는다', ()
   assert.ok(text.indexOf('한 사람씩만') < 0, text);
 });
 
+/* ---------- 전체 점검에서 찾아 고친 것들 ---------- */
+
+test('앞뒤 달 시트가 겹치는 날짜에서 같은 이름을 쓴다', () => {
+  const { ctx, ss } = preparedReal();
+  const seen = {};
+  let y = 2026, m = 9;
+  for (let i = 0; i < 14; i++) {
+    const out = ctx.ceGenerateMonth(y, m);
+    const sh = ss.getSheetByName(out.sheetName);
+    const first = new Date(Date.UTC(y, m - 1, 1));
+    const back = first.getUTCDay() === 0 ? 6 : first.getUTCDay() - 1;
+    const start = new Date(first.getTime() - back * 86400000);
+    let base = 3, w = 0;
+    while (String(sh._get(base, 1)) === 'Date') {
+      for (let c = 2; c <= 7; c++) {
+        const iso = new Date(start.getTime() + (w * 7 + (c - 2)) * 86400000).toISOString().slice(0, 10);
+        const cur = [1, 2, 3].map(k => String(sh._get(base + k, c) || '')).join('|');
+        if (seen[iso] && seen[iso].v !== cur) {
+          assert.fail(iso + ' 가 ' + seen[iso].m + ' 시트와 ' + out.sheetName + ' 시트에서 다르다\n' +
+            '  ' + seen[iso].m + ': ' + seen[iso].v + '\n  ' + out.sheetName + ': ' + cur);
+        }
+        seen[iso] = { m: out.sheetName, v: cur };
+      }
+      base += 4; w++;
+    }
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  assert.ok(Object.keys(seen).length > 300, '비교한 날이 ' + Object.keys(seen).length + '일');
+});
+
+test("'휴일(현관안내)' 가 달력을 오가도 역할을 잃지 않는다", () => {
+  const { ctx, ss } = preparedReal();
+  ctx.ceRenderCalendar(2026, 11);
+  const cal = ss.getSheetByName('달력(예외자)');
+  const c = findDayCell(cal, 18);
+  cal._set(c.row, c.col, '휴일(현관안내)');
+
+  ctx.ceRenderCalendar(2026, 12);
+  ctx.ceRenderCalendar(2026, 11);
+  const back = findDayCell(ss.getSheetByName('달력(예외자)'), 18);
+  assert.strictEqual(String(cal._get(back.row, back.col)), '휴일(현관안내)',
+    '역할이 날아가 그냥 휴일이 되면 안 된다');
+
+  // 그 주 I열만 비고 설교·방송은 그대로다
+  ctx.ceGenerateMonth(2026, 11);
+  const sh = ss.getSheetByName('2026-11');
+  let base = 3, ushers = null, sermon = '';
+  while (String(sh._get(base, 1)) === 'Date') {
+    for (let col = 2; col <= 7; col++) {
+      if (String(sh._get(base, col)) === '18') {
+        ushers = [1, 2, 3].map(k => String(sh._get(base + k, 9) || ''));
+        sermon = String(sh._get(base + 1, col) || '');
+      }
+    }
+    base += 4;
+  }
+  assert.ok(ushers, '18일을 못 찾았다');
+  assert.strictEqual(ushers.join(''), '', '현관안내가 비어야 한다');
+  assert.ok(sermon, '설교자는 그대로 있어야 한다');
+});
+
+test('역할 이름을 저장할 때 새 이름으로 적는다', () => {
+  const { ctx } = load();
+  assert.strictEqual(ctx.ceRoleLabel(ctx.CE_ROLE.DOOR), '수요백업');
+  assert.strictEqual(ctx.ceRoleLabel(ctx.CE_ROLE.PRAISE), '토요백업');
+  assert.strictEqual(ctx.ceRoleLabel(ctx.CE_ROLE.USHER), '현관안내');
+  // 적은 것을 그대로 다시 읽을 수 있다
+  [ctx.CE_ROLE.SERMON, ctx.CE_ROLE.BROADCAST, ctx.CE_ROLE.DOOR,
+    ctx.CE_ROLE.PRAISE, ctx.CE_ROLE.USHER].forEach(role => {
+    assert.strictEqual(ctx.ceNormalizeRole(ctx.ceRoleLabel(role)), role,
+      ctx.ceRoleLabel(role) + ' 를 다시 읽지 못한다');
+  });
+  // 예전 이름도 여전히 읽힌다
+  assert.strictEqual(ctx.ceNormalizeRole('수요현관'), ctx.CE_ROLE.DOOR);
+  assert.strictEqual(ctx.ceNormalizeRole('토요찬양'), ctx.CE_ROLE.PRAISE);
+});
+
+test('그 달이 통째로 기준일 앞이면 막는다', () => {
+  const { ctx } = preparedReal();            // 기준일 2026-09-02
+  // 8월 격자에는 9/2~9/5 가 섞여 있지만, 8월은 통째로 기준일 앞이다
+  assert.throws(() => ctx.ceGenerateMonth(2026, 8), /로테이션 시작일/);
+  assert.throws(() => ctx.ceGenerateMonth(2026, 1), /로테이션 시작일/);
+  // 기준일이 든 달은 만들 수 있다
+  const out = ctx.ceGenerateMonth(2026, 9);
+  assert.strictEqual(out.sheetName, '2026-09');
+});
+
+test('요일 설정에 오타가 나면 빈 표를 만들지 않고 알려 준다', () => {
+  const { ctx, ss } = preparedReal();
+  const set = ss.getSheetByName('설정');
+  const rowOf = key => {
+    for (let r = 1; r <= set.getLastRow(); r++) {
+      if (String(set._get(r, 1)).trim() === key) return r;
+    }
+    return 0;
+  };
+  const row = rowOf('새벽예배 요일');
+  assert.ok(row > 0);
+
+  set._set(row, 2, 'Mon,Tue');
+  assert.throws(() => ctx.ceReadConfig(), /알아볼 수 없습니다/);
+  set._set(row, 2, '일');
+  assert.throws(() => ctx.ceReadConfig(), /월~토 중 하나는 있어야/);
+
+  // 주일이 섞여 있으면 빼고 읽는다 (표가 월~토만 보여 주므로)
+  set._set(row, 2, '일,월,화,수,목,금,토');
+  assert.deepStrictEqual(plain(ctx.ceReadConfig().dawnDows), [1, 2, 3, 4, 5, 6]);
+
+  // 비어 있으면 기본값
+  set._set(row, 2, '');
+  assert.deepStrictEqual(plain(ctx.ceReadConfig().dawnDows), [1, 2, 3, 4, 5, 6]);
+});
+
 /* ---------- 초기 설정 만들기 안내창 ---------- */
 
 /** 8월 버전 시트를 그대로 만들어 둡니다 (예전 이름·예전 설명·_기록 탭). */

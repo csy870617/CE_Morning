@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node test/rotation.test.js && node test/calendar.test.js && node test/sheets.test.js",
     "build": "node tools/build.js",
-    "preview": "node tools/preview.js"
+    "preview": "node tools/preview.js",
+    "audit": "node tools/audit.js"
   }
 }

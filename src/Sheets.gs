@@ -143,14 +143,41 @@ function ceReadConfig() {
     return fallback;
   }
 
+  /**
+   * 요일 설정을 읽습니다.
+   *  - 비어 있으면 기본값을 씁니다
+   *  - 적혀 있는데 하나도 못 알아보면 알려 줍니다. 그냥 넘기면 그 요일이 하나도
+   *    없는 셈이 되어, 아무 설명도 없이 빈 표가 나옵니다
+   *  - 표는 월~토만 보여 주므로 주일(일)은 뺍니다. 넣어 두면 그날 배정이
+   *    보이지도 않으면서 로테이션 순번만 소모됩니다
+   */
+  function dows(keys, fallback, label) {
+    var raw = pick(keys, fallback);
+    var txt = String(raw == null ? '' : raw).trim();
+    var list = ceParseDowList(txt === '' ? fallback : raw);
+    if (!list.length) {
+      throw new Error('"' + CE_TAB.SETTINGS + '" 탭의 [' + label + '] 을 알아볼 수 없습니다. ' +
+        '월,화,수,목,금,토 처럼 적어 주세요. (지금 적힌 값: ' + txt + ')');
+    }
+    var weekOnly = [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] >= 1 && list[i] <= 6) weekOnly.push(list[i]);
+    }
+    if (!weekOnly.length) {
+      throw new Error('"' + CE_TAB.SETTINGS + '" 탭의 [' + label + '] 에 월~토 중 하나는 있어야 합니다. ' +
+        '표는 월요일부터 토요일까지만 보여 줍니다. (지금 적힌 값: ' + txt + ')');
+    }
+    return weekOnly;
+  }
+
   return {
     anchor: anchor,
-    dawnDows: ceParseDowList(pick(['새벽예배 요일'], '월,화,수,목,금,토')),
-    satDows: ceParseDowList(pick(['토요 별도 요일', '토요별도 요일'], '토')),
+    dawnDows: dows(['새벽예배 요일'], '월,화,수,목,금,토', '새벽예배 요일'),
+    satDows: dows(['토요 별도 요일', '토요별도 요일'], '토', '토요 별도 요일'),
     // '수요현관 요일'·'수요저녁 요일'·'토요찬양 요일' 은 예전 이름입니다.
     // 이미 쓰고 계신 시트를 위해 같이 받습니다.
-    doorDows: ceParseDowList(pick(['수요백업 요일', '수요현관 요일', '수요저녁 요일'], '수')),
-    praiseDows: ceParseDowList(pick(['토요백업 요일', '토요찬양 요일'], '토'))
+    doorDows: dows(['수요백업 요일', '수요현관 요일', '수요저녁 요일'], '수', '수요백업 요일'),
+    praiseDows: dows(['토요백업 요일', '토요찬양 요일'], '토', '토요백업 요일')
   };
 }
 
@@ -295,11 +322,17 @@ function ceReadRotations() {
 /* 예외 - 달력 탭에 적어 둔 휴가·휴일                                   */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 역할을 달력·저장소에 적을 글자로 바꿉니다.
+ * 여기 빠진 역할이 있으면 '전체' 로 적혀 역할 범위가 날아가므로,
+ * CE_ROLE 에 역할을 더할 때 이 함수도 같이 손봐야 합니다.
+ */
 function ceRoleLabel(role) {
   if (role === CE_ROLE.SERMON) return '설교';
   if (role === CE_ROLE.BROADCAST) return '방송';
-  if (role === CE_ROLE.DOOR) return '수요현관';
-  if (role === CE_ROLE.PRAISE) return '토요찬양';
+  if (role === CE_ROLE.DOOR) return '수요백업';
+  if (role === CE_ROLE.PRAISE) return '토요백업';
+  if (role === CE_ROLE.USHER) return '현관안내';
   return '전체';
 }
 

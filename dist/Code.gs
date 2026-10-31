@@ -194,9 +194,19 @@ function ceWeekStart(iso) {
   return ceIso(ceAddDays(d, -(dow === 0 ? 6 : dow - 1)));
 }
 
+/* 맞바꿀 상대를 찾는 범위. 계산 구간 끝에 닿지 않도록 날짜로 못박아 둡니다.
+   이 범위 안에서만 찾으므로 어느 달에서 계산해도 결과가 같습니다. */
+var CE_SWAP_MAX_DAYS = 14;
+
+/** 두 날짜 사이 날수 */
+function ceDayGap(isoA, isoB) {
+  return Math.round((ceParseIso(isoB).getTime() - ceParseIso(isoA).getTime()) / 86400000);
+}
+
 /**
  * 같은 날 설교자와 방송실이 같은 사람이면 방송실을 다음날과 맞바꿉니다.
  * 맞바꾼 결과가 또 겹치거나 휴가와 부딪히면 그 다음날로 밀어서 찾습니다.
+ * 2주 안에서 찾고, 못 찾으면 그대로 두고 경고를 남깁니다.
  */
 function ceResolveConflicts(days, exceptions) {
   for (var i = 0; i < days.length; i++) {
@@ -207,6 +217,7 @@ function ceResolveConflicts(days, exceptions) {
     var done = false;
     for (var j = i + 1; j < days.length; j++) {
       var b = days[j];
+      if (ceDayGap(a.iso, b.iso) > CE_SWAP_MAX_DAYS) break;      // 2주 넘게 찾지 않습니다
       if (!b.broadcast) continue;
       // 평일끼리, 토요일끼리만 맞바꿉니다.
       // 금요일에 겹치면 토요일을 건너뛰고 다음 월요일과 바뀝니다.
@@ -573,7 +584,17 @@ function ceMonthGrid(year, month) {
     weeks.push(week);
     cursor = ceAddDays(cursor, 7);
   }
-  return { weeks: weeks, startIso: ceIso(start), endIso: ceIso(end) };
+  /* 계산은 격자보다 한 달 더 멀리까지 돕니다.
+     격자 끝에서 계산을 멈추면, 마지막 주에 생긴 겹침이 '구간 밖' 의 다음 평일을
+     못 보고 못 푼 것으로 남습니다. 그러면 같은 날짜가 다음 달 시트에서는 풀려 있어
+     두 시트가 어긋납니다. 끝을 그 달과 상관없는 자리(다음 달 말일)로 밀어 두면
+     어느 달에서 계산해도 같은 결과가 나옵니다. */
+  return {
+    weeks: weeks,
+    startIso: ceIso(start),
+    endIso: ceIso(end),
+    buildEndIso: ceIso(ceMakeDate(year, month + 2, 0))
+  };
 }
 
 if (typeof module !== 'undefined') {
@@ -593,6 +614,8 @@ if (typeof module !== 'undefined') {
     cePickNext: cePickNext,
     ceResolveConflicts: ceResolveConflicts,
     ceWeekStart: ceWeekStart,
+    ceDayGap: ceDayGap,
+    CE_SWAP_MAX_DAYS: CE_SWAP_MAX_DAYS,
     ceEnforceMondayLimit: ceEnforceMondayLimit,
     ceFindMondaySwap: ceFindMondaySwap,
     CE_USHER_PER_WEEK: CE_USHER_PER_WEEK,
@@ -748,14 +771,41 @@ function ceReadConfig() {
     return fallback;
   }
 
+  /**
+   * 요일 설정을 읽습니다.
+   *  - 비어 있으면 기본값을 씁니다
+   *  - 적혀 있는데 하나도 못 알아보면 알려 줍니다. 그냥 넘기면 그 요일이 하나도
+   *    없는 셈이 되어, 아무 설명도 없이 빈 표가 나옵니다
+   *  - 표는 월~토만 보여 주므로 주일(일)은 뺍니다. 넣어 두면 그날 배정이
+   *    보이지도 않으면서 로테이션 순번만 소모됩니다
+   */
+  function dows(keys, fallback, label) {
+    var raw = pick(keys, fallback);
+    var txt = String(raw == null ? '' : raw).trim();
+    var list = ceParseDowList(txt === '' ? fallback : raw);
+    if (!list.length) {
+      throw new Error('"' + CE_TAB.SETTINGS + '" 탭의 [' + label + '] 을 알아볼 수 없습니다. ' +
+        '월,화,수,목,금,토 처럼 적어 주세요. (지금 적힌 값: ' + txt + ')');
+    }
+    var weekOnly = [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] >= 1 && list[i] <= 6) weekOnly.push(list[i]);
+    }
+    if (!weekOnly.length) {
+      throw new Error('"' + CE_TAB.SETTINGS + '" 탭의 [' + label + '] 에 월~토 중 하나는 있어야 합니다. ' +
+        '표는 월요일부터 토요일까지만 보여 줍니다. (지금 적힌 값: ' + txt + ')');
+    }
+    return weekOnly;
+  }
+
   return {
     anchor: anchor,
-    dawnDows: ceParseDowList(pick(['새벽예배 요일'], '월,화,수,목,금,토')),
-    satDows: ceParseDowList(pick(['토요 별도 요일', '토요별도 요일'], '토')),
+    dawnDows: dows(['새벽예배 요일'], '월,화,수,목,금,토', '새벽예배 요일'),
+    satDows: dows(['토요 별도 요일', '토요별도 요일'], '토', '토요 별도 요일'),
     // '수요현관 요일'·'수요저녁 요일'·'토요찬양 요일' 은 예전 이름입니다.
     // 이미 쓰고 계신 시트를 위해 같이 받습니다.
-    doorDows: ceParseDowList(pick(['수요백업 요일', '수요현관 요일', '수요저녁 요일'], '수')),
-    praiseDows: ceParseDowList(pick(['토요백업 요일', '토요찬양 요일'], '토'))
+    doorDows: dows(['수요백업 요일', '수요현관 요일', '수요저녁 요일'], '수', '수요백업 요일'),
+    praiseDows: dows(['토요백업 요일', '토요찬양 요일'], '토', '토요백업 요일')
   };
 }
 
@@ -900,11 +950,17 @@ function ceReadRotations() {
 /* 예외 - 달력 탭에 적어 둔 휴가·휴일                                   */
 /* ------------------------------------------------------------------ */
 
+/**
+ * 역할을 달력·저장소에 적을 글자로 바꿉니다.
+ * 여기 빠진 역할이 있으면 '전체' 로 적혀 역할 범위가 날아가므로,
+ * CE_ROLE 에 역할을 더할 때 이 함수도 같이 손봐야 합니다.
+ */
 function ceRoleLabel(role) {
   if (role === CE_ROLE.SERMON) return '설교';
   if (role === CE_ROLE.BROADCAST) return '방송';
-  if (role === CE_ROLE.DOOR) return '수요현관';
-  if (role === CE_ROLE.PRAISE) return '토요찬양';
+  if (role === CE_ROLE.DOOR) return '수요백업';
+  if (role === CE_ROLE.PRAISE) return '토요백업';
+  if (role === CE_ROLE.USHER) return '현관안내';
   return '전체';
 }
 
@@ -1293,11 +1349,15 @@ function ceGenerateMonth(year, month) {
   var ex = ceReadAllExceptions();
   var grid = ceMonthGrid(year, month);
 
-  if (grid.endIso < cfg.anchor) {
+  // 격자가 아니라 '그 달' 을 기준으로 봅니다. 격자에는 다음 달 날짜가 조금 섞여 있어서,
+  // 격자로 보면 통째로 기준일 앞인 달도 통과해 거의 빈 표가 만들어집니다.
+  if (ceIso(ceMakeDate(year, month + 1, 0)) < cfg.anchor) {
     throw new Error('로테이션 시작일(' + cfg.anchor + ') 보다 앞선 달입니다. 시작일을 앞으로 당겨 주세요.');
   }
 
-  var sched = ceBuildSchedule(cfg, rot, ex, grid.endIso);
+  // 격자보다 한 달 더 계산합니다. 마지막 주 겹침이 구간 밖을 못 봐서
+  // 같은 날짜가 달마다 달라지는 일을 막습니다. 그리는 것은 격자 범위만입니다.
+  var sched = ceBuildSchedule(cfg, rot, ex, grid.buildEndIso || grid.endIso);
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
 
   var sheetName = ceMonthSheetName(year, month);

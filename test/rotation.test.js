@@ -1137,4 +1137,52 @@ test('수요백업·토요백업 이름으로도 역할을 알아본다', () => 
   assert.strictEqual(R.ceNormalizeRole('토요백업'), R.CE_ROLE.PRAISE);
 });
 
+/* ---------- 계산 구간이 그 달에 휘둘리지 않는다 ---------- */
+
+test('격자보다 한 달 더 계산할 구간을 함께 알려 준다', () => {
+  assert.strictEqual(R.ceMonthGrid(2026, 9).buildEndIso, '2026-10-31');
+  assert.strictEqual(R.ceMonthGrid(2026, 11).buildEndIso, '2026-12-31');
+  assert.strictEqual(R.ceMonthGrid(2026, 12).buildEndIso, '2027-01-31');   // 해를 넘긴다
+  assert.strictEqual(R.ceMonthGrid(2028, 1).buildEndIso, '2028-02-29');    // 윤년
+});
+
+test('마지막 주 겹침이 구간 밖 때문에 달마다 달라지지 않는다', () => {
+  // 2027-07-02(금) 에 설교자=방송실 이 되고, 맞바꿀 상대는 7/5(월) 입니다.
+  // 6월 격자는 7/3 에서 끝나므로, 격자까지만 계산하면 못 풀고 7월 시트와 어긋납니다.
+  const cfg = { anchor: '2026-09-02', dawnDows: [1,2,3,4,5,6], satDows: [6], doorDows: [3], praiseDows: [6] };
+  const rot = {
+    sermon: ['김진혁','김혜성','이광현','백주은','이민희','최세영','김진혁',
+      '김혜성','박소영','이광현','백주은','이민희','최세영'],
+    broadcast: ['이광현','최세영','이민희','백주은','이다혜','김혜성','김진혁',
+      '이광현','최세영','이민희','백주은','박소영','김혜성','김진혁'],
+    satSermon: ['손창민'], satBroadcast: ['최세영'],
+    door: ['이민희','백주은','박소영','김혜성','김진혁','이광현'],
+    praise: ['백주은','김혜성','이광현','이민희']
+  };
+  const build = (y, m) => {
+    const g = R.ceMonthGrid(y, m);
+    return R.ceBuildSchedule(cfg, rot, [], g.buildEndIso);
+  };
+  const june = build(2027, 6).byIso['2027-07-02'];
+  const july = build(2027, 7).byIso['2027-07-02'];
+  assert.strictEqual(june.broadcast, july.broadcast, '6월 시트와 7월 시트의 7/2 방송실이 달라졌다');
+  assert.strictEqual(june.warning, july.warning);
+  assert.strictEqual(june.warning, '', '구간을 넉넉히 보면 풀려야 한다');
+});
+
+test('맞바꿀 상대는 2주 안에서만 찾는다', () => {
+  assert.strictEqual(R.CE_SWAP_MAX_DAYS, 14);
+  assert.strictEqual(R.ceDayGap('2026-09-01', '2026-09-15'), 14);
+  assert.strictEqual(R.ceDayGap('2026-09-15', '2026-09-01'), -14);
+
+  // 2주 넘게 떨어진 날은 상대가 되지 않는다
+  const days = [
+    { iso: '2026-09-01', dow: 2, preacher: '가', broadcast: '가', bcGroup: 'broadcast', swapGroup: 'week' },
+    { iso: '2026-09-17', dow: 4, preacher: '나', broadcast: 'ㄴ', bcGroup: 'broadcast', swapGroup: 'week' }
+  ];
+  R.ceResolveConflicts(days, []);
+  assert.strictEqual(days[0].broadcast, '가', '2주 밖은 데려오지 않는다');
+  assert.ok(days[0].warning);
+});
+
 console.log('\n' + passed + ' passed');

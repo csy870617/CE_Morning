@@ -190,9 +190,19 @@ function ceWeekStart(iso) {
   return ceIso(ceAddDays(d, -(dow === 0 ? 6 : dow - 1)));
 }
 
+/* 맞바꿀 상대를 찾는 범위. 계산 구간 끝에 닿지 않도록 날짜로 못박아 둡니다.
+   이 범위 안에서만 찾으므로 어느 달에서 계산해도 결과가 같습니다. */
+var CE_SWAP_MAX_DAYS = 14;
+
+/** 두 날짜 사이 날수 */
+function ceDayGap(isoA, isoB) {
+  return Math.round((ceParseIso(isoB).getTime() - ceParseIso(isoA).getTime()) / 86400000);
+}
+
 /**
  * 같은 날 설교자와 방송실이 같은 사람이면 방송실을 다음날과 맞바꿉니다.
  * 맞바꾼 결과가 또 겹치거나 휴가와 부딪히면 그 다음날로 밀어서 찾습니다.
+ * 2주 안에서 찾고, 못 찾으면 그대로 두고 경고를 남깁니다.
  */
 function ceResolveConflicts(days, exceptions) {
   for (var i = 0; i < days.length; i++) {
@@ -203,6 +213,7 @@ function ceResolveConflicts(days, exceptions) {
     var done = false;
     for (var j = i + 1; j < days.length; j++) {
       var b = days[j];
+      if (ceDayGap(a.iso, b.iso) > CE_SWAP_MAX_DAYS) break;      // 2주 넘게 찾지 않습니다
       if (!b.broadcast) continue;
       // 평일끼리, 토요일끼리만 맞바꿉니다.
       // 금요일에 겹치면 토요일을 건너뛰고 다음 월요일과 바뀝니다.
@@ -569,7 +580,17 @@ function ceMonthGrid(year, month) {
     weeks.push(week);
     cursor = ceAddDays(cursor, 7);
   }
-  return { weeks: weeks, startIso: ceIso(start), endIso: ceIso(end) };
+  /* 계산은 격자보다 한 달 더 멀리까지 돕니다.
+     격자 끝에서 계산을 멈추면, 마지막 주에 생긴 겹침이 '구간 밖' 의 다음 평일을
+     못 보고 못 푼 것으로 남습니다. 그러면 같은 날짜가 다음 달 시트에서는 풀려 있어
+     두 시트가 어긋납니다. 끝을 그 달과 상관없는 자리(다음 달 말일)로 밀어 두면
+     어느 달에서 계산해도 같은 결과가 나옵니다. */
+  return {
+    weeks: weeks,
+    startIso: ceIso(start),
+    endIso: ceIso(end),
+    buildEndIso: ceIso(ceMakeDate(year, month + 2, 0))
+  };
 }
 
 if (typeof module !== 'undefined') {
@@ -589,6 +610,8 @@ if (typeof module !== 'undefined') {
     cePickNext: cePickNext,
     ceResolveConflicts: ceResolveConflicts,
     ceWeekStart: ceWeekStart,
+    ceDayGap: ceDayGap,
+    CE_SWAP_MAX_DAYS: CE_SWAP_MAX_DAYS,
     ceEnforceMondayLimit: ceEnforceMondayLimit,
     ceFindMondaySwap: ceFindMondaySwap,
     CE_USHER_PER_WEEK: CE_USHER_PER_WEEK,
