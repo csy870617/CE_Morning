@@ -835,11 +835,11 @@ var CE_ROTATION_COLUMNS = [
   { key: 'satBroadcast', header: '토요방송',
     note: '토요일 방송실 명단. 비워 두면 [방송] 명단으로 그냥 이어서 돕니다.' },
   { key: 'door', header: '수요백업',
-    note: '수요저녁 백업 명단. 표 넷째 줄 [수요/토요] 의 수요일 칸에 들어갑니다. ' +
+    note: '수요저녁 백업 명단. 표 넷째 줄 [수요/토요 서브] 의 수요일 칸에 들어갑니다. ' +
       '그날 설교자·방송실과 겹쳐도 바꾸지 않고 순서대로 돕니다.',
     renameFrom: ['수요현관', '수요저녁 현관', '현관'] },
   { key: 'praise', header: '토요백업',
-    note: '토요일 백업 명단. 같은 넷째 줄의 토요일 칸에 들어갑니다. ' +
+    note: '토요일 백업 명단. 같은 넷째 줄 [수요/토요 서브] 의 토요일 칸에 들어갑니다. ' +
       '그날 설교자·방송실과 겹쳐도 바꾸지 않고 순서대로 돕니다.',
     renameFrom: ['토요찬양', '찬양'] },
   { key: 'holidaySermon', header: '휴일(설교)',
@@ -1305,7 +1305,7 @@ var CE_USHER_HEADER = '현관안내(수,토)';
 var CE_USHER_GAP_NOTE = '현관안내를 세 명 다 채우지 못했습니다. ' +
   '그 주 수요백업·토요백업으로 선 사람과 그 주 예외자는 세우지 않습니다.';
 
-var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요/토요'];
+var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요/토요 서브'];
 
 /**
  * 넷째 줄은 요일에 따라 내용이 바뀝니다.
@@ -1644,7 +1644,7 @@ function ceWriteNamePicker(sh, startRow, totalCols, grid, sched, cfg) {
   if (!names.length) return startRow - 1;
 
   sh.getRange(startRow, 1, 1, totalCols).merge()
-    .setValue('이름을 체크하면 그 사람 칸이 표시됩니다 — 설교는 노랑, 방송·수요/토요·현관안내는 연한 초록.')
+    .setValue('이름을 체크하면 그 사람 칸이 표시됩니다 — 설교는 노랑, 방송·수요/토요 서브·현관안내는 연한 초록.')
     .setFontSize(9).setFontColor('#666666');
 
   var perLine = CE_OUT.COLS;                 // 표 너비에 맞춰 한 줄에 6명씩
@@ -1676,7 +1676,7 @@ function ceWriteNamePicker(sh, startRow, totalCols, grid, sched, cfg) {
 
 /**
  * 체크한 이름과 같은 칸을 칠하는 조건부 서식.
- * 설교자 줄은 노랑, 방송실과 수요/토요 줄은 연한 초록으로 갈라 놓습니다.
+ * 설교자 줄은 노랑, 방송실과 수요/토요 서브 줄은 연한 초록으로 갈라 놓습니다.
  *
  * 규칙 하나가 여러 자리에 걸리므로, 조건식이 자리에 휘둘리지 않도록
  * INDIRECT(ADDRESS(ROW(),COLUMN())) 로 '지금 이 칸' 을 가리킵니다.
@@ -1858,7 +1858,7 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
       ' · ' + Utilities.formatDate(new Date(), ceTz(), 'yyyy-MM-dd HH:mm'))
     .setFontSize(9).setFontColor('#666666');
 
-  sh.setColumnWidth(1, 90);
+  sh.setColumnWidth(1, 105);        // 줄 이름이 접히지 않을 만큼
   for (var col2 = CE_OUT.FIRST_COL; col2 <= totalCols; col2++) sh.setColumnWidth(col2, 100);
   sh.setColumnWidth(totalCols + 1, 24);                 // H열 - 표와 떼어 놓는 빈 열
   sh.setColumnWidth(CE_OUT.USHER_COL, 110);
@@ -1952,7 +1952,7 @@ var CE_SETTING_ROWS = [
     '방송실 교대도 토요일끼리만 일어납니다.',
     ['토요별도 요일']],
   ['수요백업 요일', '수',
-    '[수요백업] 담당을 배정할 요일. 표 넷째 줄 [수요/토요] 의 이 요일 칸에 들어갑니다. ' +
+    '[수요백업] 담당을 배정할 요일. 표 넷째 줄 [수요/토요 서브] 의 이 요일 칸에 들어갑니다. ' +
     '[현관안내] 날짜도 이 요일로 잡습니다.',
     ['수요현관 요일', '수요저녁 요일']],
   ['토요백업 요일', '토',

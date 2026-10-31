@@ -300,7 +300,7 @@ test('월별 표를 끝까지 그린다', () => {
 
   // 첫 주 블록: 3행 Date / 4행 설교자 / 5행 방송실 / 6행 수요·토요
   assert.strictEqual(sh.getRange(3, 1).getValue(), 'Date');
-  assert.strictEqual(sh.getRange(6, 1).getValue(), '수요/토요');
+  assert.strictEqual(sh.getRange(6, 1).getValue(), '수요/토요 서브');
   assert.deepStrictEqual(plain(readRow(sh, 3, 0)), ['31', '1', '2', '3', '4', '5']);
 
   const preachers = readRow(sh, 3, 1);
@@ -420,18 +420,18 @@ test('I열 칸 색은 표와 같다', () => {
   });
 });
 
-test('I열 현관안내에 그 주 수요/토요 백업 이름이 들어가지 않는다', () => {
+test('I열 현관안내에 그 주 수요/토요 서브 이름이 들어가지 않는다', () => {
   const { ctx, ss } = prepared(fullRotations());
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
 
-  // 블록마다 Date 줄은 3, 7, 11, 15, 19. 넷째 줄(수요/토요)은 base+3.
+  // 블록마다 Date 줄은 3, 7, 11, 15, 19. 넷째 줄(수요/토요 서브)은 base+3.
   [3, 7, 11, 15, 19].forEach(base => {
     const special = sh.getRange(base + 3, 2, 1, 6).getValues()[0].map(v => String(v)).filter(Boolean);
     const ushers = [1, 2, 3].map(i => String(sh.getRange(base + i, 9).getValue()));
     special.forEach(name => {
       assert.ok(ushers.indexOf(name) < 0,
-        base + '행 블록: ' + name + ' 이 수요/토요와 현관안내에 함께 들어갔다');
+        base + '행 블록: ' + name + ' 이 수요/토요 서브와 현관안내에 함께 들어갔다');
     });
   });
 });
@@ -944,7 +944,7 @@ test('설교자 줄은 노랑, 나머지는 연한 초록 규칙이 걸린다', 
   ['B4:G4', 'B8:G8', 'B12:G12', 'B16:G16', 'B20:G20'].forEach(r => {
     assert.ok(yellow.ranges.indexOf(r) >= 0, r + ' 이 노랑 규칙에 없다');
   });
-  // 방송실 + 수요/토요 는 그 아래 두 줄씩, 현관안내는 I열
+  // 방송실 + 수요/토요 서브 는 그 아래 두 줄씩, 현관안내는 I열
   ['B5:G6', 'B9:G10', 'B13:G14', 'B17:G18', 'B21:G22',
    'I4:I6', 'I8:I10', 'I12:I14', 'I16:I18', 'I20:I22'].forEach(r => {
     assert.ok(green.ranges.indexOf(r) >= 0, r + ' 이 초록 규칙에 없다');

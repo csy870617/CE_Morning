@@ -43,7 +43,7 @@ console.log(`\n${year}년 ${month}월 새벽 설교자 및 백업   (기준일 $
 console.log(pad('', 18) + ['월', '화', '수', '목', '금', '토'].map(d => pad(d, 12)).join('') +
   '  |  ' + '현관안내(수,토)');
 for (const week of grid.weeks) {
-  const rows = { Date: [], 설교자: [], 방송실: [], '수요/토요': [] };
+  const rows = { Date: [], 설교자: [], 방송실: [], '수요/토요 서브': [] };
   let wedIso = '', wedDay = '', satDay = '';
   for (const cell of week) {
     const a = sched.byIso[cell.iso] || {};
@@ -52,7 +52,7 @@ for (const week of grid.weeks) {
     rows['방송실'].push((a.broadcast || '-') + (a.swapNote ? '*' : '') + (a.mondayNote ? '#' : ''));
     const isWed = cfg.doorDows.includes(cell.dow);
     const isSat = cfg.praiseDows.includes(cell.dow);
-    rows['수요/토요'].push(isWed ? (a.door || '') : isSat ? (a.praise || '') : '');
+    rows['수요/토요 서브'].push(isWed ? (a.door || '') : isSat ? (a.praise || '') : '');
     if (isWed) { wedIso = cell.iso; wedDay = cell.day; }
     if (isSat) satDay = cell.day;
   }
