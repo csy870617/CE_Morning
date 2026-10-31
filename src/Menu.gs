@@ -50,8 +50,11 @@ function ceMenuSetup() {
     var msg = [];
     if (res.renamed.length) msg.push('이름을 바꾼 탭: ' + res.renamed.join(', '));
     if (res.created.length) msg.push('만든 탭: ' + res.created.join(', '));
-    if (res.updated.length) msg.push('보완한 탭: ' + res.updated.join(', '));
-    if (!msg.length) msg.push('필요한 탭이 이미 모두 있습니다.');
+    if (res.updated.length) {
+      msg.push('보완한 내용');
+      for (var u = 0; u < res.updated.length; u++) msg.push('  · ' + res.updated[u]);
+    }
+    if (!msg.length) msg.push('필요한 탭이 이미 모두 있고, 설명도 최신입니다.');
     var stale = [];
     if (ceSS().getSheetByName('장기예외')) stale.push('장기예외');
     if (ceSS().getSheetByName('_기록')) stale.push('_기록');

@@ -30,6 +30,7 @@ function makeRange(sheet, row, col, numRows, numCols) {
     getColumn: () => col,
     getNumRows: () => numRows,
     setNote(v) { sheet.notes.set(`${row},${col}`, v); return r; },
+    getNote() { const v = sheet.notes.get(`${row},${col}`); return v === undefined ? '' : v; },
     setFormula(f) { sheet._set(row, col, f); return r; },
     setVerticalAlignment() { return r; },
     clearContent() {
@@ -163,7 +164,8 @@ function makeSpreadsheet() {
     setActiveSheet(s) { active = s; return s; },
     deleteSheet(s) { const i = sheets.indexOf(s); if (i >= 0) sheets.splice(i, 1); },
     getActiveSheet: () => active,
-    toast() {},
+    toasts: [],
+    toast(msg, title) { this.toasts.push({ msg: String(msg), title: title }); },
     moveActiveSheet(pos) {
       if (!active) return;
       const i = sheets.indexOf(active);
@@ -179,10 +181,17 @@ function makeSpreadsheet() {
 function makeContext() {
   const ss = makeSpreadsheet();
   const shown = [];
+  const alerts = [];
+  const menus = [];
+  /* 메뉴에서 ui.prompt 가 뜰 때 돌려줄 답. 테스트에서 바꿔 끼웁니다. */
+  const promptAnswer = { button: 'OK', text: '' };
   const globalsRef = {};
   const ctx = {
     ss,
     shownDialogs: shown,
+    alerts,
+    menus,
+    promptAnswer,
     globals: globalsRef
   };
   Object.assign(globalsRef, {
@@ -210,7 +219,27 @@ function makeContext() {
           return builder;
         },
         getUi: () => ({
-          showModalDialog(html, title) { shown.push({ html: html.html, title: title }); }
+          showModalDialog(html, title) { shown.push({ html: html.html, title: title }); },
+          alert(msg) { alerts.push(String(msg)); return 'OK'; },
+          prompt(title, text) {
+            shown.push({ prompt: true, title: title, text: String(text) });
+            return {
+              getSelectedButton: () => promptAnswer.button,
+              getResponseText: () => promptAnswer.text
+            };
+          },
+          ButtonSet: { OK_CANCEL: 'OK_CANCEL', OK: 'OK' },
+          Button: { OK: 'OK', CANCEL: 'CANCEL' },
+          createMenu(name) {
+            const menu = { name: name, items: [] };
+            menus.push(menu);
+            const builder = {
+              addItem(label, fn) { menu.items.push({ label, fn }); return builder; },
+              addSeparator() { menu.items.push({ separator: true }); return builder; },
+              addToUi() { return builder; }
+            };
+            return builder;
+          }
         })
       },
       ScriptApp: {

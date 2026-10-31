@@ -13,6 +13,9 @@ function load() {
   const { ss, globals } = made;
   const ctx = vm.createContext(globals);
   ctx.__dialogs = () => made.shownDialogs;
+  ctx.__alerts = made.alerts;       // ui.alert 로 띄운 글
+  ctx.__menus = made.menus;         // 상단 메뉴 구성
+  ctx.__prompt = made.promptAnswer; // ui.prompt 에 돌려줄 답
   FILES.forEach(f => {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'src', f), 'utf8'), ctx, { filename: f });
   });
@@ -121,14 +124,54 @@ test('예전 3열짜리 로테이션 탭에 빠진 열을 덧붙인다', () => {
   rot._set(1, 2, '방송'); rot._set(2, 2, '정집사');
   rot._set(1, 3, '수요현관'); rot._set(2, 3, '오권사');
 
-  const added = ctx.ceUpgradeRotation();
-  assert.deepStrictEqual(plain(added),
+  const up = ctx.ceUpgradeRotation();
+  assert.deepStrictEqual(plain(up.added),
     ['토요설교', '토요방송', '토요백업', '휴일(설교)', '휴일(백업)', '현관안내']);
+  assert.deepStrictEqual(plain(up.renamed), ['수요현관 → 수요백업']);
+  assert.strictEqual(rot.getRange(1, 3).getValue(), '수요백업', '예전 머리글은 새 이름으로 바뀐다');
 
   const read = ctx.ceReadRotations();
   assert.deepStrictEqual(plain(read.sermon), ['김목사']);
   assert.deepStrictEqual(plain(read.door), ['오권사'], '기존 수요현관이 다른 명단으로 잘못 읽히면 안 된다');
   assert.deepStrictEqual(plain(read.satSermon), []);
+});
+
+test('예전 머리글은 새 이름으로 바꾸고, 그냥 다르게 쓴 이름은 그대로 둔다', () => {
+  const { ctx, ss } = load();
+  const rot = ss.insertSheet('로테이션');
+  rot._set(1, 1, '설교자'); rot._set(2, 1, '김목사');   // 변형 이름 - 그대로 둔다
+  rot._set(1, 2, '방송실'); rot._set(2, 2, '정집사');   // 변형 이름 - 그대로 둔다
+  rot._set(1, 3, '수요현관'); rot._set(2, 3, '오권사'); // 뜻이 달라진 이름 - 바꾼다
+  rot._set(1, 4, '토요찬양'); rot._set(2, 4, '서집사'); // 뜻이 달라진 이름 - 바꾼다
+
+  const up = ctx.ceUpgradeRotation();
+  assert.deepStrictEqual(plain(up.renamed), ['수요현관 → 수요백업', '토요찬양 → 토요백업']);
+  assert.strictEqual(rot.getRange(1, 1).getValue(), '설교자', '쓰시던 이름은 건드리지 않는다');
+  assert.strictEqual(rot.getRange(1, 2).getValue(), '방송실', '쓰시던 이름은 건드리지 않는다');
+  assert.strictEqual(rot.getRange(1, 3).getValue(), '수요백업');
+  assert.strictEqual(rot.getRange(1, 4).getValue(), '토요백업');
+
+  // 적어 둔 이름은 그대로 읽힌다
+  const read = ctx.ceReadRotations();
+  assert.deepStrictEqual(plain(read.door), ['오권사']);
+  assert.deepStrictEqual(plain(read.praise), ['서집사']);
+});
+
+test('머리글 메모를 최신 설명으로 맞춘다', () => {
+  const { ctx, ss } = load();
+  const rot = ss.insertSheet('로테이션');
+  rot._set(1, 1, '설교'); rot._set(2, 1, '김목사');
+  rot._set(1, 2, '수요현관'); rot._set(2, 2, '오권사');
+  rot.notes.set('1,2', '수요저녁 백업 명단. 표 넷째 줄 수요일 칸에 들어갑니다.');  // 예전 메모
+
+  ctx.ceUpgradeRotation();
+  assert.ok(String(rot.notes.get('1,1')).indexOf('평일 새벽 설교자') >= 0, rot.notes.get('1,1'));
+  assert.ok(String(rot.notes.get('1,2')).indexOf('겹쳐도') >= 0,
+    '예전 메모가 최신 설명으로 바뀐다: ' + rot.notes.get('1,2'));
+  // 새로 끼워 넣은 열에도 메모가 붙는다
+  const cols = ctx.ceReadRotations()._columns;
+  assert.ok(String(rot.notes.get('1,' + cols.usher)).indexOf('세 명씩') >= 0,
+    rot.notes.get('1,' + cols.usher));
 });
 
 test('새 명단 열은 기존 명단 바로 옆에 들어간다 (안내 문구 뒤로 밀리지 않게)', () => {
@@ -145,7 +188,7 @@ test('새 명단 열은 기존 명단 바로 옆에 들어간다 (안내 문구 
 
   const headers = rot.getRange(1, 1, 1, rot.getLastColumn()).getValues()[0];
   assert.deepStrictEqual(plain(headers.slice(0, 9)),
-    ['설교', '방송', '수요현관', '토요설교', '토요방송', '토요백업',
+    ['설교', '방송', '수요백업', '토요설교', '토요방송', '토요백업',
       '휴일(설교)', '휴일(백업)', '현관안내']);
   // 안내 문구는 오른쪽으로 밀렸을 뿐 사라지지 않는다
   assert.ok(String(rot._get(1, 10)).indexOf('2행부터') === 0, '안내 문구가 보존되어야 한다');
@@ -184,10 +227,14 @@ test("예전 '수요저녁 요일' 설정을 그대로 알아본다", () => {
   assert.deepStrictEqual(plain(cfg.doorDows), [3]);
   assert.deepStrictEqual(plain(cfg.praiseDows), [6], '없는 항목은 기본값으로 채운다');
 
-  const added = ctx.ceUpgradeSettings();
-  assert.ok(added.indexOf('수요백업 요일') < 0, '예전 이름이 있으면 새 이름을 또 만들지 않는다');
-  assert.ok(added.indexOf('토요백업 요일') >= 0);
-  assert.ok(added.indexOf('토요 별도 요일') >= 0);
+  const up = ctx.ceUpgradeSettings();
+  assert.ok(up.added.indexOf('수요백업 요일') < 0, '예전 이름이 있으면 새 이름을 또 만들지 않는다');
+  assert.ok(up.added.indexOf('토요백업 요일') >= 0);
+  assert.ok(up.added.indexOf('토요 별도 요일') >= 0);
+  // 예전 이름 칸은 새 이름으로 바뀌고 값은 그대로다
+  assert.strictEqual(set.getRange(4, 1).getValue(), '수요백업 요일');
+  assert.strictEqual(set.getRange(4, 2).getValue(), '수');
+  assert.ok(up.renamed.indexOf('수요저녁 요일 → 수요백업 요일') >= 0, plain(up.renamed).join(', '));
 });
 
 test("예전 '수요현관 요일'·'토요찬양 요일' 설정도 그대로 쓴다", () => {
@@ -202,9 +249,41 @@ test("예전 '수요현관 요일'·'토요찬양 요일' 설정도 그대로 �
   assert.deepStrictEqual(plain(cfg.doorDows), [3]);
   assert.deepStrictEqual(plain(cfg.praiseDows), [6]);
 
-  const added = ctx.ceUpgradeSettings();
-  assert.ok(added.indexOf('수요백업 요일') < 0, '예전 이름이 있으면 새 이름을 또 만들지 않는다');
-  assert.ok(added.indexOf('토요백업 요일') < 0, '예전 이름이 있으면 새 이름을 또 만들지 않는다');
+  const up = ctx.ceUpgradeSettings();
+  assert.ok(up.added.indexOf('수요백업 요일') < 0, '예전 이름이 있으면 새 이름을 또 만들지 않는다');
+  assert.ok(up.added.indexOf('토요백업 요일') < 0, '예전 이름이 있으면 새 이름을 또 만들지 않는다');
+  assert.strictEqual(set.getRange(3, 1).getValue(), '수요백업 요일');
+  assert.strictEqual(set.getRange(4, 1).getValue(), '토요백업 요일');
+  assert.strictEqual(set.getRange(3, 2).getValue(), '수', '값은 그대로 둔다');
+});
+
+test('설정 설명은 코드가 바뀌면 다시 눌러 최신으로 맞춘다', () => {
+  const { ctx, ss } = load();
+  ctx.ceSetupAll();
+  const set = ss.getSheetByName('설정');
+
+  // 설명 칸을 예전 문구로 되돌려 놓고
+  let row = 0;
+  for (let r = 1; r <= set.getLastRow(); r++) {
+    if (String(set._get(r, 1)).trim() === '수요백업 요일') row = r;
+  }
+  assert.ok(row > 0);
+  set._set(row, 3, '수요저녁 현관 담당을 배정할 요일');
+  const keep = set._get(row, 2);
+
+  const up = ctx.ceUpgradeSettings();
+  assert.ok(up.refreshed.indexOf('수요백업 요일') >= 0, plain(up.refreshed).join(', '));
+  assert.ok(String(set._get(row, 3)).indexOf('현관안내') >= 0, set._get(row, 3));
+  assert.strictEqual(set._get(row, 2), keep, '값은 건드리지 않는다');
+  assert.deepStrictEqual(plain(up.added), [], '없는 항목을 또 만들지 않는다');
+});
+
+test('고칠 게 없으면 아무것도 바뀌지 않았다고 한다', () => {
+  const { ctx } = load();
+  ctx.ceSetupAll();
+  const up = ctx.ceUpgradeSettings();
+  assert.deepStrictEqual(plain(up.added), []);
+  assert.deepStrictEqual(plain(up.refreshed), []);
 });
 
 test('월별 표를 끝까지 그린다', () => {
@@ -1003,6 +1082,76 @@ test('이름이 줄어들어 체크박스 줄이 짧아져도 규칙이 남지 �
     assert.ok(value === false || value === true,
       `${k} 에 체크박스 규칙이 남았는데 값은 ${JSON.stringify(value)} 이다`);
   });
+});
+
+/* ---------- 초기 설정 만들기 안내창 ---------- */
+
+/** 8월 버전 시트를 그대로 만들어 둡니다 (예전 이름·예전 설명·_기록 탭). */
+function oldVersionSheet() {
+  const { ctx, ss } = load();
+  const set = ss.insertSheet('설정');
+  [['항목', '값', '설명'],
+   ['로테이션 시작일', '2026-09-02', '이 날짜에 각 명단의 첫 번째 사람이 섭니다.'],
+   ['새벽예배 요일', '월,화,수,목,금,토', '설교자와 방송실을 배정할 요일'],
+   ['수요저녁 요일', '수', '수요저녁 현관 담당을 배정할 요일'],
+   ['토요찬양 요일', '토', '토요찬양 담당을 배정할 요일. 같은 넷째 줄에 들어갑니다.']
+  ].forEach((row, r) => row.forEach((v, c) => set._set(r + 1, c + 1, v)));
+
+  const rot = ss.insertSheet('로테이션');
+  [['설교', '김목사'], ['방송', '정집사'], ['수요현관', '오권사'], ['토요찬양', '서집사']]
+    .forEach((col, c) => { rot._set(1, c + 1, col[0]); rot._set(2, c + 1, col[1]); });
+
+  ss.insertSheet('_기록')._set(1, 1, '날짜');
+  return { ctx, ss, set, rot };
+}
+
+test('예전 버전 시트를 올리면 무엇을 고쳤는지 알려 준다', () => {
+  const { ctx } = oldVersionSheet();
+  ctx.ceMenuSetup();
+  const msg = ctx.__alerts ? ctx.__alerts.join('\n') : '';
+  assert.ok(msg.indexOf('보완한 내용') >= 0, msg);
+  assert.ok(msg.indexOf('수요저녁 요일 → 수요백업 요일') >= 0, msg);
+  assert.ok(msg.indexOf('수요현관 → 수요백업') >= 0, msg);
+  assert.ok(msg.indexOf('휴일(설교)') >= 0, msg);
+  assert.ok(msg.indexOf('설명') >= 0, '설명을 맞췄다고 알려야 한다:\n' + msg);
+  assert.ok(msg.indexOf('_기록') >= 0, '쓰지 않는 탭도 알려야 한다:\n' + msg);
+});
+
+test('값은 그대로 두고 이름과 설명만 바꾼다', () => {
+  const { ctx, set, rot } = oldVersionSheet();
+  ctx.ceMenuSetup();
+  // 설정: 이름·설명은 바뀌고 값은 그대로
+  assert.strictEqual(set._get(4, 1), '수요백업 요일');
+  assert.strictEqual(set._get(4, 2), '수');
+  assert.ok(String(set._get(4, 3)).indexOf('현관안내') >= 0, set._get(4, 3));
+  // 로테이션: 머리글은 바뀌고 적어 둔 이름은 그대로
+  assert.strictEqual(rot._get(1, 3), '수요백업');
+  assert.strictEqual(rot._get(2, 3), '오권사');
+  assert.strictEqual(rot._get(1, 4), '토요백업');
+  assert.strictEqual(rot._get(2, 4), '서집사');
+  // 설정 값이 살아 있으니 배정도 그대로 된다
+  const cfg = ctx.ceReadConfig();
+  assert.strictEqual(cfg.anchor, '2026-09-02');
+  assert.deepStrictEqual(plain(cfg.doorDows), [3]);
+  assert.deepStrictEqual(plain(cfg.praiseDows), [6]);
+});
+
+test('두 번 눌러도 고칠 게 없다고 한다', () => {
+  const { ctx } = oldVersionSheet();
+  ctx.ceMenuSetup();
+  ctx.__alerts.length = 0;
+  ctx.ceMenuSetup();
+  const msg = ctx.__alerts.join('\n');
+  assert.ok(msg.indexOf('보완한 내용') < 0, '두 번째에는 고칠 게 없어야 한다:\n' + msg);
+  assert.ok(msg.indexOf('이미 모두 있고') >= 0, msg);
+});
+
+test('메뉴에는 배정표 만들기와 초기 설정 만들기만 있다', () => {
+  const { ctx } = load();
+  ctx.onOpen();
+  assert.strictEqual(ctx.__menus.length, 1);
+  const labels = ctx.__menus[0].items.filter(i => !i.separator).map(i => i.label);
+  assert.deepStrictEqual(plain(labels), ['새벽설교 배정표 만들기', '초기 설정 만들기']);
 });
 
 console.log('\n' + passed + ' passed');

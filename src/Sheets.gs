@@ -162,16 +162,40 @@ function ceReadConfig() {
  * 명단 열 정의. 열 위치가 아니라 1행 머리글 이름으로 찾습니다.
  * 그래야 열 순서를 바꾸거나 중간에 열을 끼워 넣어도 어긋나지 않습니다.
  */
+/**
+ * 명단 열 정의.
+ *  header     1행에 넣을 이름
+ *  note       머리글에 붙일 메모 (초기 설정을 다시 누르면 최신 내용으로 갱신됩니다)
+ *  renameFrom 예전에 쓰던 머리글. 이 이름이 적혀 있으면 header 로 바꿔 줍니다.
+ *             (뜻이 달라진 이름만 적습니다. '설교자'·'방송실' 처럼 그냥 다르게
+ *              쓰신 이름은 그대로 두고 알아보기만 합니다.)
+ */
 var CE_ROTATION_COLUMNS = [
-  { key: 'sermon', header: '설교' },
-  { key: 'broadcast', header: '방송' },
-  { key: 'satSermon', header: '토요설교' },
-  { key: 'satBroadcast', header: '토요방송' },
-  { key: 'door', header: '수요백업' },
-  { key: 'praise', header: '토요백업' },
-  { key: 'holidaySermon', header: '휴일(설교)' },
-  { key: 'holidayBroadcast', header: '휴일(백업)' },
-  { key: 'usher', header: '현관안내' }
+  { key: 'sermon', header: '설교',
+    note: '평일 새벽 설교자 명단' },
+  { key: 'broadcast', header: '방송',
+    note: '평일 새벽 방송실(백업) 명단' },
+  { key: 'satSermon', header: '토요설교',
+    note: '토요일 설교자 명단. 비워 두면 [설교] 명단으로 그냥 이어서 돕니다.' },
+  { key: 'satBroadcast', header: '토요방송',
+    note: '토요일 방송실 명단. 비워 두면 [방송] 명단으로 그냥 이어서 돕니다.' },
+  { key: 'door', header: '수요백업',
+    note: '수요저녁 백업 명단. 표 넷째 줄 [수요/토요] 의 수요일 칸에 들어갑니다. ' +
+      '그날 설교자·방송실과 겹쳐도 바꾸지 않고 순서대로 돕니다.',
+    renameFrom: ['수요현관', '수요저녁 현관', '현관'] },
+  { key: 'praise', header: '토요백업',
+    note: '토요일 백업 명단. 같은 넷째 줄의 토요일 칸에 들어갑니다. ' +
+      '그날 설교자·방송실과 겹쳐도 바꾸지 않고 순서대로 돕니다.',
+    renameFrom: ['토요찬양', '찬양'] },
+  { key: 'holidaySermon', header: '휴일(설교)',
+    note: '달력(예외자)에 [휴일] 로 적은 날의 설교자 명단. 평일·토요 순번과 따로 돕니다. ' +
+      '비워 두면 그 칸은 빈 칸으로 남습니다 (직접 입력).' },
+  { key: 'holidayBroadcast', header: '휴일(백업)',
+    note: '달력(예외자)에 [휴일] 로 적은 날의 방송실 명단. 평일·토요 순번과 따로 돕니다. ' +
+      '비워 두면 그 칸은 빈 칸으로 남습니다 (직접 입력).' },
+  { key: 'usher', header: '현관안내',
+    note: '현관안내 명단. 수요일이 든 주마다 세 명씩, 표 오른쪽 I열에 들어갑니다. ' +
+      "그냥 [휴일] 로는 비우지 않고 [휴일(현관안내)] 라고 적은 주만 비웁니다." }
 ];
 
 function ceNormalizeHeader(v) {
