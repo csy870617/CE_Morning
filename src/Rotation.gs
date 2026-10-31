@@ -225,8 +225,13 @@ function ceResolveConflicts(days, exceptions) {
 function ceEnforceMondayLimit(days, field, role, exceptions, label) {
   var seen = {};
   var what = label || (field === 'preacher' ? '설교' : '방송실');
+  /* 메모는 표의 줄마다 따로 붙여야 하므로 역할별로도 담아 둡니다.
+     mondayNote·mondayWarning 은 둘을 합친 것으로, 배정 끝 안내 문구에 씁니다. */
+  var noteKey = field === 'preacher' ? 'mondayNoteSermon' : 'mondayNoteBroadcast';
+  var warnKey = field === 'preacher' ? 'mondayWarnSermon' : 'mondayWarnBroadcast';
 
   function addNote(day, text) {
+    day[noteKey] = text;
     day.mondayNote = (day.mondayNote ? day.mondayNote + ' / ' : '') + what + ' ' + text;
   }
   for (var i = 0; i < days.length; i++) {
@@ -255,8 +260,9 @@ function ceEnforceMondayLimit(days, field, role, exceptions, label) {
 
     seen[month][a[field]] = true;
     if (!b) {
-      a.mondayWarning = (a.mondayWarning ? a.mondayWarning + ' / ' : '') +
-        what + ' 담당이 그 달 월요일에 두 번 걸립니다 (바꿀 상대를 찾지 못했습니다)';
+      var text = what + ' 담당이 그 달 월요일에 두 번 걸립니다 (바꿀 상대를 찾지 못했습니다)';
+      a[warnKey] = text;
+      a.mondayWarning = (a.mondayWarning ? a.mondayWarning + ' / ' : '') + text;
     }
   }
   return days;
@@ -436,7 +442,10 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
         iso: iso, preacher: '', broadcast: '', door: '', praise: '', ushers: [],
         offSermon: false, offBroadcast: false, offDoor: false, offPraise: false, offUsher: false,
         gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false, gapUsher: false,
-        swapNote: '', warning: '', mondayNote: '', mondayWarning: ''
+        swapNote: '', warning: '',
+        mondayNote: '', mondayWarning: '',
+        mondayNoteSermon: '', mondayNoteBroadcast: '',
+        mondayWarnSermon: '', mondayWarnBroadcast: ''
       };
     }
     return byIso[iso];
@@ -456,6 +465,10 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     cell.warning = day.warning || '';
     cell.mondayNote = day.mondayNote || '';
     cell.mondayWarning = day.mondayWarning || '';
+    cell.mondayNoteSermon = day.mondayNoteSermon || '';
+    cell.mondayNoteBroadcast = day.mondayNoteBroadcast || '';
+    cell.mondayWarnSermon = day.mondayWarnSermon || '';
+    cell.mondayWarnBroadcast = day.mondayWarnBroadcast || '';
   }
   for (i = 0; i < doorDays.length; i++) {
     var wd = doorDays[i];
