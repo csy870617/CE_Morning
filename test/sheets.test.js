@@ -1216,6 +1216,126 @@ test('휴일 메모를 월요일 메모가 덮지 않는다', () => {
   assert.strictEqual(sh.getRange(24, 2).getBackground(), '#f4cccc');
 });
 
+/* ---------- 이름 체크는 한 사람씩만 ---------- */
+
+/** 월별 표의 체크박스 칸 좌표를 모두 찾습니다. */
+function checkboxCells(sh) {
+  return [...sh.checkboxes].map(k => {
+    const [row, col] = k.split(',').map(Number);
+    return { row, col, name: String(sh._get(row - 1, col) || '') };
+  }).sort((a, b) => a.row - b.row || a.col - b.col);
+}
+
+/** 사람이 칸을 체크한 것처럼 onEdit 을 부릅니다. */
+function clickCheckbox(ctx, sh, cell, on) {
+  sh._set(cell.row, cell.col, on === undefined ? true : on);
+  ctx.onEdit({ range: sh.getRange(cell.row, cell.col) });
+}
+
+test('다른 사람을 체크하면 먼저 체크한 것이 풀린다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  const boxes = checkboxCells(sh);
+  assert.ok(boxes.length >= 3, '체크박스가 여러 개 있어야 한다');
+
+  clickCheckbox(ctx, sh, boxes[0]);
+  assert.strictEqual(sh._get(boxes[0].row, boxes[0].col), true);
+
+  clickCheckbox(ctx, sh, boxes[1]);
+  assert.strictEqual(sh._get(boxes[1].row, boxes[1].col), true, '새로 누른 것은 켜져 있다');
+  assert.strictEqual(sh._get(boxes[0].row, boxes[0].col), false, '먼저 누른 것은 풀린다');
+
+  // 켜진 것이 언제나 하나뿐이다
+  assert.strictEqual(boxes.filter(b => sh._get(b.row, b.col) === true).length, 1);
+});
+
+test('줄이 달라도 한 사람씩만 체크된다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  const boxes = checkboxCells(sh);
+  const rows = boxes.map(b => b.row).filter((v, i, a) => a.indexOf(v) === i);
+  assert.ok(rows.length >= 2, '체크박스 줄이 두 줄 이상이어야 한다: ' + rows.join(','));
+
+  const first = boxes.filter(b => b.row === rows[0])[0];
+  const second = boxes.filter(b => b.row === rows[1])[0];
+  clickCheckbox(ctx, sh, first);
+  clickCheckbox(ctx, sh, second);
+  assert.strictEqual(sh._get(second.row, second.col), true);
+  assert.strictEqual(sh._get(first.row, first.col), false, '윗줄 체크가 풀려야 한다');
+});
+
+test('체크를 풀 때는 다른 칸을 건드리지 않는다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  const boxes = checkboxCells(sh);
+
+  clickCheckbox(ctx, sh, boxes[0]);
+  clickCheckbox(ctx, sh, boxes[0], false);     // 같은 칸을 다시 눌러 해제
+  assert.strictEqual(boxes.filter(b => sh._get(b.row, b.col) === true).length, 0);
+});
+
+test('표의 다른 칸을 고쳐도 체크가 풀리지 않는다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  const boxes = checkboxCells(sh);
+  clickCheckbox(ctx, sh, boxes[0]);
+
+  // 설교자 칸을 손으로 고치는 경우
+  sh._set(4, 2, '손으로 적은 이름');
+  ctx.onEdit({ range: sh.getRange(4, 2) });
+  assert.strictEqual(sh._get(boxes[0].row, boxes[0].col), true, '체크는 그대로여야 한다');
+  assert.strictEqual(sh._get(4, 2), '손으로 적은 이름');
+});
+
+test('다른 탭의 체크박스는 건드리지 않는다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  const boxes = checkboxCells(sh);
+  clickCheckbox(ctx, sh, boxes[0]);
+
+  // 월별 표가 아닌 탭에서 체크하면 월별 표 체크는 그대로다
+  const other = ss.insertSheet('내 메모');
+  other._set(2, 2, true);
+  ctx.onEdit({ range: other.getRange(2, 2) });
+  assert.strictEqual(sh._get(boxes[0].row, boxes[0].col), true);
+  assert.strictEqual(other._get(2, 2), true);
+});
+
+test('달이 둘이면 서로 다른 표의 체크는 서로 간섭하지 않는다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 9);
+  ctx.ceGenerateMonth(2026, 10);
+  const sep = ss.getSheetByName('2026-09');
+  const oct = ss.getSheetByName('2026-10');
+
+  const sepBox = checkboxCells(sep)[0];
+  const octBox = checkboxCells(oct)[0];
+  clickCheckbox(ctx, sep, sepBox);
+  clickCheckbox(ctx, oct, octBox);
+
+  assert.strictEqual(sep._get(sepBox.row, sepBox.col), true, '9월 체크는 남아 있어야 한다');
+  assert.strictEqual(oct._get(octBox.row, octBox.col), true);
+});
+
+test('설명줄도 한 사람씩만 된다고 알려 준다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+  let text = '';
+  for (let r = 1; r <= sh.getLastRow(); r++) {
+    const v = String(sh._get(r, 1) || '');
+    if (v.indexOf('이름을 체크하면') === 0) text = v;
+  }
+  assert.ok(text, '설명줄을 찾지 못했다');
+  assert.ok(text.indexOf('한 사람씩만') >= 0, text);
+  assert.ok(text.indexOf('여러 명') < 0, '여러 명 동시에 된다는 말은 빠져야 한다: ' + text);
+});
+
 /* ---------- 초기 설정 만들기 안내창 ---------- */
 
 /** 8월 버전 시트를 그대로 만들어 둡니다 (예전 이름·예전 설명·_기록 탭). */

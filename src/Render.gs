@@ -339,8 +339,8 @@ function ceNamesInMonth(grid, sched, cfg) {
 
 /**
  * 표 아래에 이름 목록을 깔고 그 밑에 체크박스를 붙입니다.
- * 체크하면 그 사람 칸이 노랗게 보입니다. 색칠은 조건부 서식이 하므로
- * 누르는 즉시 반응하고, 여러 명을 함께 켜 둘 수도 있습니다.
+ * 체크하면 그 사람 칸이 보입니다. 색칠은 조건부 서식이 하므로 누르는 즉시 반응합니다.
+ * 한 사람씩만 체크되게 하는 것은 onEdit(ceOnNamePick) 이 맡습니다.
  *
  * 반환값은 이 구역이 끝나는 줄 번호입니다.
  */
@@ -351,7 +351,8 @@ function ceWriteNamePicker(sh, startRow, totalCols, grid, sched, cfg) {
   if (!names.length) return startRow - 1;
 
   sh.getRange(startRow, 1, 1, totalCols).merge()
-    .setValue('이름을 체크하면 그 사람 칸이 표시됩니다 — 설교는 노랑, 방송·수요/토요·현관안내는 연한 초록. (여러 명 동시에 가능, 다시 누르면 해제)')
+    .setValue('이름을 체크하면 그 사람 칸이 표시됩니다 — 설교는 노랑, 방송·수요/토요·현관안내는 연한 초록. ' +
+      '(한 사람씩만 됩니다. 다른 사람을 체크하면 먼저 체크한 것이 풀립니다)')
     .setFontSize(9).setFontColor('#666666');
 
   var perLine = CE_OUT.COLS;                 // 표 너비에 맞춰 한 줄에 6명씩

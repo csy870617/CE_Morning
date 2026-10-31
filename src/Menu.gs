@@ -20,13 +20,22 @@ function onOpen() {
 }
 
 /**
- * 달력 탭의 연월 칸(B1)을 고치면 그 달로 다시 그립니다.
- * 드롭다운에서 달을 고르면 바로 반영됩니다.
+ * 칸을 고칠 때마다 불립니다. 두 가지를 봅니다.
+ *  - 달력 탭의 연월 칸(B1)  -> 그 달 달력을 다시 그립니다
+ *  - 월별 표의 이름 체크박스 -> 한 사람만 체크되게 다른 체크를 풉니다
  */
 function onEdit(e) {
   if (!e || !e.range) return;
   var sh = e.range.getSheet();
-  if (sh.getName() !== CE_TAB.CALENDAR) return;
+  if (sh.getName() === CE_TAB.CALENDAR) {
+    ceOnCalendarMonthPick(e);
+    return;
+  }
+  ceOnNamePick(e, sh);
+}
+
+/** 달력 탭의 연월 칸을 고치면 그 달로 다시 그립니다. */
+function ceOnCalendarMonthPick(e) {
   if (e.range.getRow() !== CE_CAL.YM_ROW || e.range.getColumn() !== CE_CAL.YM_COL) return;
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -40,6 +49,34 @@ function onEdit(e) {
     ss.toast(ceFormatYearMonth(ym.year, ym.month) + ' 달력을 불러왔습니다.', '달력', 5);
   } catch (err) {
     ss.toast('달력을 그리지 못했습니다: ' + err.message, '달력', 8);
+  }
+}
+
+/**
+ * 이름 체크는 한 사람씩만 되게 합니다.
+ * 새로 체크하면 그 표에 켜져 있던 다른 체크를 모두 풉니다.
+ *
+ * 체크박스 칸만 값이 참·거짓(boolean)이고 표의 다른 칸은 글자나 숫자이므로,
+ * 켜진 체크박스는 '값이 true 인 칸' 으로 찾습니다.
+ * 스크립트가 고친 칸은 onEdit 을 다시 부르지 않으므로 서로 물리지 않습니다.
+ */
+function ceOnNamePick(e, sh) {
+  if (!ceIsMonthSheetName(sh.getName())) return;
+  if (e.range.getNumRows() !== 1 || e.range.getNumColumns() !== 1) return;
+  if (e.range.getValue() !== true) return;     // 체크를 풀 때는 할 일이 없습니다
+
+  var row = e.range.getRow();
+  var col = e.range.getColumn();
+  var lastRow = sh.getLastRow();
+  var lastCol = sh.getLastColumn();
+  if (lastRow < 1 || lastCol < 1) return;
+
+  var values = sh.getRange(1, 1, lastRow, lastCol).getValues();
+  for (var r = 0; r < values.length; r++) {
+    for (var c = 0; c < values[r].length; c++) {
+      if (r === row - 1 && c === col - 1) continue;
+      if (values[r][c] === true) sh.getRange(r + 1, c + 1).setValue(false);
+    }
   }
 }
 

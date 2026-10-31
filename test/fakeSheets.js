@@ -29,6 +29,7 @@ function makeRange(sheet, row, col, numRows, numCols) {
     getSheet: () => sheet,
     getColumn: () => col,
     getNumRows: () => numRows,
+    getNumColumns: () => numCols,
     setNote(v) { sheet.notes.set(`${row},${col}`, v); return r; },
     getNote() { const v = sheet.notes.get(`${row},${col}`); return v === undefined ? '' : v; },
     setFormula(f) { sheet._set(row, col, f); return r; },
