@@ -15,6 +15,8 @@ var CE_OUT = {
 };
 
 var CE_USHER_HEADER = '현관안내(수,토)';
+var CE_USHER_GAP_NOTE = '현관안내를 세 명 다 채우지 못했습니다. ' +
+  '그 주 수요백업·토요백업으로 선 사람과 그 주 예외자는 세우지 않습니다.';
 
 var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요/토요'];
 
@@ -307,10 +309,10 @@ function ceWriteUsherBlock(sh, base, week, sched, cfg) {
     cellRange.setValue(names[k] || '').setHorizontalAlignment('center');
     // 왼쪽 표의 같은 줄과 같은 바탕색
     cellRange.setBackground(k === 0 ? CE_COLOR.BAND_BG : null);
-  }
-  if (info.gapUsher) {
-    sh.getRange(base + 1, CE_OUT.USHER_COL)
-      .setBackground(CE_COLOR.WARN_BG).setNote('현관안내를 세 명 다 채우지 못했습니다');
+    // 못 채운 자리를 표시합니다. 채운 자리는 멀쩡하므로 빈 자리만 칠합니다.
+    if (info.gapUsher && !names[k]) {
+      cellRange.setBackground(CE_COLOR.WARN_BG).setNote(CE_USHER_GAP_NOTE);
+    }
   }
 }
 

@@ -420,6 +420,39 @@ test('I열 칸 색은 표와 같다', () => {
   });
 });
 
+test('I열 현관안내에 그 주 수요/토요 백업 이름이 들어가지 않는다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+
+  // 블록마다 Date 줄은 3, 7, 11, 15, 19. 넷째 줄(수요/토요)은 base+3.
+  [3, 7, 11, 15, 19].forEach(base => {
+    const special = sh.getRange(base + 3, 2, 1, 6).getValues()[0].map(v => String(v)).filter(Boolean);
+    const ushers = [1, 2, 3].map(i => String(sh.getRange(base + i, 9).getValue()));
+    special.forEach(name => {
+      assert.ok(ushers.indexOf(name) < 0,
+        base + '행 블록: ' + name + ' 이 수요/토요와 현관안내에 함께 들어갔다');
+    });
+  });
+});
+
+test('겹침을 빼서 세 명을 못 채우면 그 칸에 이유를 적는다', () => {
+  const rots = fullRotations();
+  rots['수요백업'] = ['안1'];
+  rots['토요백업'] = ['안2'];
+  rots['현관안내'] = ['안1', '안2', '안3'];
+  const { ctx, ss } = prepared(rots);
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+
+  assert.strictEqual(String(sh.getRange(4, 9).getValue()), '안3');
+  assert.strictEqual(String(sh.getRange(5, 9).getValue()), '');
+  const note = String(sh.notes.get('5,9') || '');
+  assert.ok(note.indexOf('세 명 다 채우지 못했습니다') >= 0, note);
+  assert.ok(note.indexOf('수요백업·토요백업') >= 0, '왜 못 채웠는지 적어야 한다: ' + note);
+  assert.strictEqual(sh.getRange(5, 9).getBackground(), '#ea9999');
+});
+
 test('현관안내 명단이 비면 안내만 하고 표는 그린다', () => {
   const rots = fullRotations();
   rots['현관안내'] = [];

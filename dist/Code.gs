@@ -168,19 +168,30 @@ function ceIsAvailable(name, iso, role, exceptions) {
  * 휴가인 사람은 건너뛰고, 건너뛴 사람의 차례는 소진되지 않습니다
  * (다음 바퀴에 다시 돌아옵니다).
  */
-function cePickNext(list, ptr, iso, role, exceptions) {
+function cePickNext(list, ptr, iso, role, exceptions, blocked) {
   if (!list || list.length === 0) return { name: '', ptr: ptr, skipped: [] };
   var skipped = [];
   for (var k = 0; k < list.length; k++) {
     var idx = (ptr + k) % list.length;
     var name = list[idx];
-    if (ceIsAvailable(name, iso, role, exceptions)) {
+    var free = !blocked || blocked.indexOf(name) < 0;
+    if (free && ceIsAvailable(name, iso, role, exceptions)) {
       return { name: name, ptr: (idx + 1) % list.length, skipped: skipped };
     }
     skipped.push(name);
   }
   // 전원 예외 - 빈칸으로 두고 포인터는 그대로 둡니다.
   return { name: '', ptr: ptr, skipped: skipped };
+}
+
+/**
+ * 그 날짜가 든 주의 시작(월요일) 을 돌려줍니다.
+ * 표가 월~토 한 묶음이라 '같은 주' 를 이 기준으로 봅니다.
+ */
+function ceWeekStart(iso) {
+  var d = ceParseIso(iso);
+  var dow = d.getUTCDay();
+  return ceIso(ceAddDays(d, -(dow === 0 ? 6 : dow - 1)));
 }
 
 /**
@@ -351,16 +362,20 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     return picked.name;
   }
 
-  /** 현관안내는 한 주에 여러 명을 세웁니다. 같은 주에 같은 사람이 겹치지 않게 뽑습니다. */
-  function takeUshers(iso, count) {
+  /**
+   * 현관안내는 한 주에 여러 명을 세웁니다.
+   * busy 에 든 사람(그 주 수요백업·토요백업)과 이미 뽑은 사람은 건너뜁니다.
+   * 건너뛴 사람의 차례는 소모되지 않아 다음 주에 그대로 돌아옵니다.
+   */
+  function takeUshers(iso, count, busy) {
     var out = [];
-    var tries = (rot.usher || []).length;
-    while (out.length < count && tries > 0) {
-      var picked = cePickNext(rot.usher, ptr.usher, iso, CE_ROLE.USHER, ex);
+    var blocked = (busy || []).slice();
+    for (var t = 0; t < count; t++) {
+      var picked = cePickNext(rot.usher, ptr.usher, iso, CE_ROLE.USHER, ex, blocked);
       if (!picked.name) break;
       ptr.usher = picked.ptr;
-      if (out.indexOf(picked.name) < 0) out.push(picked.name);
-      tries--;
+      out.push(picked.name);
+      blocked.push(picked.name);
     }
     return out;
   }
@@ -414,11 +429,12 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
 
     if (doorDows.indexOf(dow) >= 0) {
       // 현관안내는 그 주의 수요일을 기준으로 한 번, 세 명씩 세웁니다.
-      var offUsher = ceIsHolidayForRoleOnly(iso, CE_ROLE.USHER, ex);
-      var ushers = offUsher ? [] : takeUshers(iso, CE_USHER_PER_WEEK);
+      // 그 주 수요백업·토요백업과 겹치면 안 되므로, 자리만 잡아 두고
+      // 그 주 배정이 다 끝난 뒤에 아래에서 한꺼번에 뽑습니다.
       usherWeeks.push({
-        iso: iso, dow: dow, ushers: ushers, offUsher: offUsher,
-        gapUsher: !offUsher && has('usher') && ushers.length < CE_USHER_PER_WEEK
+        iso: iso, dow: dow, ushers: [],
+        offUsher: ceIsHolidayForRoleOnly(iso, CE_ROLE.USHER, ex),
+        gapUsher: false
       });
     }
 
@@ -430,6 +446,28 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
         gapPraise: !offPraise && !praiseName && has('praise')
       });
     }
+  }
+
+  /* 현관안내는 수요일과 토요일 현관을 함께 맡으므로, 그 주 수요백업·토요백업으로
+     이미 선 사람은 세울 수 없습니다. 토요일이 수요일보다 뒤에 오기 때문에
+     그 주 배정이 다 끝난 지금 뽑습니다. 현관안내 순번은 주 단위로만 돌아가므로
+     나중에 뽑아도 결과는 늘 같습니다. */
+  var busyInWeek = {};
+  function markBusy(iso2, name) {
+    if (!name) return;
+    var wk = ceWeekStart(iso2);
+    if (!busyInWeek[wk]) busyInWeek[wk] = [];
+    if (busyInWeek[wk].indexOf(name) < 0) busyInWeek[wk].push(name);
+  }
+  var bi;
+  for (bi = 0; bi < doorDays.length; bi++) markBusy(doorDays[bi].iso, doorDays[bi].door);
+  for (bi = 0; bi < praiseDays.length; bi++) markBusy(praiseDays[bi].iso, praiseDays[bi].praise);
+
+  for (bi = 0; bi < usherWeeks.length; bi++) {
+    var uw = usherWeeks[bi];
+    uw.busy = busyInWeek[ceWeekStart(uw.iso)] || [];
+    uw.ushers = uw.offUsher ? [] : takeUshers(uw.iso, CE_USHER_PER_WEEK, uw.busy);
+    uw.gapUsher = !uw.offUsher && has('usher') && uw.ushers.length < CE_USHER_PER_WEEK;
   }
 
   ceResolveConflicts(dawnDays, ex);
@@ -554,6 +592,7 @@ if (typeof module !== 'undefined') {
     ceIsAvailable: ceIsAvailable,
     cePickNext: cePickNext,
     ceResolveConflicts: ceResolveConflicts,
+    ceWeekStart: ceWeekStart,
     ceEnforceMondayLimit: ceEnforceMondayLimit,
     ceFindMondaySwap: ceFindMondaySwap,
     CE_USHER_PER_WEEK: CE_USHER_PER_WEEK,
@@ -1207,6 +1246,8 @@ var CE_OUT = {
 };
 
 var CE_USHER_HEADER = '현관안내(수,토)';
+var CE_USHER_GAP_NOTE = '현관안내를 세 명 다 채우지 못했습니다. ' +
+  '그 주 수요백업·토요백업으로 선 사람과 그 주 예외자는 세우지 않습니다.';
 
 var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요/토요'];
 
@@ -1499,10 +1540,10 @@ function ceWriteUsherBlock(sh, base, week, sched, cfg) {
     cellRange.setValue(names[k] || '').setHorizontalAlignment('center');
     // 왼쪽 표의 같은 줄과 같은 바탕색
     cellRange.setBackground(k === 0 ? CE_COLOR.BAND_BG : null);
-  }
-  if (info.gapUsher) {
-    sh.getRange(base + 1, CE_OUT.USHER_COL)
-      .setBackground(CE_COLOR.WARN_BG).setNote('현관안내를 세 명 다 채우지 못했습니다');
+    // 못 채운 자리를 표시합니다. 채운 자리는 멀쩡하므로 빈 자리만 칠합니다.
+    if (info.gapUsher && !names[k]) {
+      cellRange.setBackground(CE_COLOR.WARN_BG).setNote(CE_USHER_GAP_NOTE);
+    }
   }
 }
 
