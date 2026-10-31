@@ -11,10 +11,10 @@ var CE_SETTING_ROWS = [
     '설교자와 방송실을 배정할 요일'],
   ['토요 별도 요일', '토',
     '이 요일은 [토요설교]·[토요방송] 명단으로 따로 돌립니다. 두 명단을 비워 두면 평일 명단으로 그냥 이어서 돕니다.'],
-  ['수요현관 요일', '수',
-    '수요현관 담당을 배정할 요일. 넷째 줄에 들어갑니다.'],
-  ['토요찬양 요일', '토',
-    '토요찬양 담당을 배정할 요일. 같은 넷째 줄에 들어갑니다.']
+  ['수요백업 요일', '수',
+    '[수요백업] 담당을 배정할 요일. 넷째 줄에 들어갑니다. [현관안내] 날짜도 이 요일로 잡습니다.'],
+  ['토요백업 요일', '토',
+    '[토요백업] 담당을 배정할 요일. 같은 넷째 줄에 들어갑니다.']
 ];
 
 function ceSetupAll() {
@@ -59,8 +59,9 @@ function ceUpgradeSettings() {
     var key = String(values[i][0]).trim();
     if (key) existing[key] = true;
   }
-  // '수요저녁 요일' 은 예전 이름이라 그대로 두고 새 이름을 또 만들지 않습니다.
-  if (existing['수요저녁 요일']) existing['수요현관 요일'] = true;
+  // 예전 이름을 쓰고 계시면 그대로 두고 새 이름을 또 만들지 않습니다.
+  if (existing['수요저녁 요일'] || existing['수요현관 요일']) existing['수요백업 요일'] = true;
+  if (existing['토요찬양 요일']) existing['토요백업 요일'] = true;
 
   var added = [];
   for (var r = 0; r < CE_SETTING_ROWS.length; r++) {
@@ -162,12 +163,18 @@ function ceSetupRotation() {
     .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff').setFontWeight('bold')
     .setHorizontalAlignment('center');
 
-  sh.getRange(1, 1).setNote('평일 새벽 설교자 명단');
-  sh.getRange(1, 2).setNote('평일 새벽 방송실 명단');
-  sh.getRange(1, 3).setNote('토요일 설교자 명단. 비워 두면 [설교] 명단으로 그냥 이어서 돕니다.');
-  sh.getRange(1, 4).setNote('토요일 방송실 명단. 비워 두면 [방송] 명단으로 그냥 이어서 돕니다.');
-  sh.getRange(1, 5).setNote('수요일 현관 담당 명단');
-  sh.getRange(1, 6).setNote('토요일 찬양 담당 명단');
+  var notes = [
+    '평일 새벽 설교자 명단',
+    '평일 새벽 방송실(백업) 명단',
+    '토요일 설교자 명단. 비워 두면 [설교] 명단으로 그냥 이어서 돕니다.',
+    '토요일 방송실 명단. 비워 두면 [방송] 명단으로 그냥 이어서 돕니다.',
+    '수요저녁 백업 명단. 표 넷째 줄 수요일 칸에 들어갑니다.',
+    '토요일 백업 명단. 표 넷째 줄 토요일 칸에 들어갑니다.',
+    '달력에 휴일로 적은 날의 설교자 명단',
+    '달력에 휴일로 적은 날의 방송실 명단',
+    '현관안내 명단. 한 주에 세 명씩, 표 오른쪽 현관안내 칸에 들어갑니다.'
+  ];
+  for (var i = 0; i < notes.length && i < n; i++) sh.getRange(1, i + 1).setNote(notes[i]);
 
   // 안내 문구는 명단 열 바깥에 둡니다. 명단 열에 있으면 사람 이름으로 읽혀 버립니다.
   var guide = n + 2;

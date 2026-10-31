@@ -147,9 +147,10 @@ function ceReadConfig() {
     anchor: anchor,
     dawnDows: ceParseDowList(pick(['새벽예배 요일'], '월,화,수,목,금,토')),
     satDows: ceParseDowList(pick(['토요 별도 요일', '토요별도 요일'], '토')),
-    // '수요저녁 요일' 은 예전 이름입니다. 이미 쓰고 계신 시트를 위해 같이 받습니다.
-    doorDows: ceParseDowList(pick(['수요현관 요일', '수요저녁 요일'], '수')),
-    praiseDows: ceParseDowList(pick(['토요찬양 요일'], '토'))
+    // '수요현관 요일'·'수요저녁 요일'·'토요찬양 요일' 은 예전 이름입니다.
+    // 이미 쓰고 계신 시트를 위해 같이 받습니다.
+    doorDows: ceParseDowList(pick(['수요백업 요일', '수요현관 요일', '수요저녁 요일'], '수')),
+    praiseDows: ceParseDowList(pick(['토요백업 요일', '토요찬양 요일'], '토'))
   };
 }
 
@@ -166,8 +167,11 @@ var CE_ROTATION_COLUMNS = [
   { key: 'broadcast', header: '방송' },
   { key: 'satSermon', header: '토요설교' },
   { key: 'satBroadcast', header: '토요방송' },
-  { key: 'door', header: '수요현관' },
-  { key: 'praise', header: '토요찬양' }
+  { key: 'door', header: '수요백업' },
+  { key: 'praise', header: '토요백업' },
+  { key: 'holidaySermon', header: '휴일(설교)' },
+  { key: 'holidayBroadcast', header: '휴일(백업)' },
+  { key: 'usher', header: '현관안내' }
 ];
 
 function ceNormalizeHeader(v) {
@@ -176,17 +180,33 @@ function ceNormalizeHeader(v) {
 
 /**
  * 머리글 한 칸이 어느 명단인지 알아냅니다.
- * '토요 설교', '토요설교자', '방송실' 처럼 조금 달라도 알아보도록 낱말로 찾습니다.
+ * '설교자', '토요 설교', '방송실', '수요현관' 처럼 조금 달라도 낱말로 찾습니다.
  * 안내 문구가 머리글로 오인되지 않게 짧은 글만 봅니다.
  */
 function ceMatchRotationKey(header) {
   var h = ceNormalizeHeader(header);
-  if (!h || h.length > 8) return '';
-  if (/[.,!?()]/.test(h)) return '';
+  if (!h || h.length > 10) return '';
+  if (/[.,!?]/.test(h)) return '';
+
+  // '현관안내' 가 '현관'(수요백업) 으로 읽히지 않도록 먼저 봅니다.
+  if (h.indexOf('안내') >= 0) return 'usher';
+
+  if (h.indexOf('휴일') >= 0) {
+    if (h.indexOf('설교') >= 0) return 'holidaySermon';
+    if (h.indexOf('백업') >= 0 || h.indexOf('방송') >= 0) return 'holidayBroadcast';
+    return '';
+  }
 
   var sat = h.indexOf('토') >= 0;
-  if (h.indexOf('찬양') >= 0) return 'praise';
-  if (h.indexOf('현관') >= 0) return 'door';
+  var wed = h.indexOf('수') >= 0;
+
+  if (h.indexOf('찬양') >= 0) return 'praise';          // 예전 이름: 토요찬양
+  if (h.indexOf('현관') >= 0) return 'door';            // 예전 이름: 수요현관
+  if (h.indexOf('백업') >= 0) {
+    if (sat) return 'praise';
+    if (wed) return 'door';
+    return '';
+  }
   if (h.indexOf('설교') >= 0) return sat ? 'satSermon' : 'sermon';
   if (h.indexOf('방송') >= 0) return sat ? 'satBroadcast' : 'broadcast';
   return '';

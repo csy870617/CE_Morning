@@ -1,6 +1,6 @@
 /* 구글 시트 API 를 아주 얇게 흉내 낸 껍데기.
    시트에 붙는 코드(Setup/Sheets/Calendar/Render)를 Node 에서 한 번 돌려 보기 위한 것입니다.
-   서식은 받아만 두고 버립니다. 값·메모·병합만 실제로 기억합니다. */
+   값·메모·병합·배경색만 실제로 기억하고, 나머지 서식은 받아만 두고 버립니다. */
 
 function makeRange(sheet, row, col, numRows, numCols) {
   const r = {
@@ -69,7 +69,19 @@ function makeRange(sheet, row, col, numRows, numCols) {
       return numRows === 1 && numCols === 1 ? a : `${a}:${letter(col + numCols - 1)}${row + numRows - 1}`;
     }
   };
-  ['setBackground', 'setFontColor', 'setFontWeight', 'setFontSize', 'setFontStyle',
+  /* setBackground(null) 은 실제 시트에서 '기본 바탕색' 으로 되돌리는 것이라 지워서 흉내 냅니다. */
+  r.setBackground = color => {
+    for (let i = 0; i < numRows; i++) {
+      for (let j = 0; j < numCols; j++) {
+        const key = `${row + i},${col + j}`;
+        if (color === null || color === undefined) sheet.backgrounds.delete(key);
+        else sheet.backgrounds.set(key, color);
+      }
+    }
+    return r;
+  };
+  r.getBackground = () => sheet.backgrounds.get(`${row},${col}`);
+  ['setFontColor', 'setFontWeight', 'setFontSize', 'setFontStyle',
    'setHorizontalAlignment', 'setWrap', 'setNumberFormat', 'setBorder'].forEach(m => { r[m] = () => r; });
   return r;
 }
@@ -79,6 +91,7 @@ function makeSheet(name) {
     name,
     cells: new Map(),
     notes: new Map(),
+    backgrounds: new Map(),
     validations: new Map(),
     checkboxes: new Set(),
     conditionalRules: [],
@@ -121,7 +134,11 @@ function makeSheet(name) {
       sheet.cells = moved;
       return sheet;
     },
-    clear() { sheet.cells.clear(); sheet.notes.clear(); sheet.checkboxes.clear(); return sheet; },
+    clear() {
+      sheet.cells.clear(); sheet.notes.clear(); sheet.checkboxes.clear();
+      sheet.backgrounds.clear();
+      return sheet;
+    },
     setConditionalFormatRules(rules) { sheet.conditionalRules = rules.slice(); return sheet; },
     getConditionalFormatRules: () => sheet.conditionalRules.slice(),
     clearNotes() { sheet.notes.clear(); return sheet; },

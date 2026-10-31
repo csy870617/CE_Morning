@@ -15,7 +15,10 @@ const rotations = {
   satSermon: ['강목사', '조전도사'],
   satBroadcast: ['임집사', '강목사'],
   door: ['오권사', '윤집사'],
-  praise: ['서집사', '류집사']
+  praise: ['서집사', '류집사'],
+  holidaySermon: ['한목사'],
+  holidayBroadcast: ['노집사'],
+  usher: ['고집사', '남집사', '도집사', '마집사', '배집사', '신집사', '양집사']
 };
 const exceptions = [
   { name: '이목사', start: '2026-09-07', end: '2026-09-12', role: R.CE_ROLE.ALL },
@@ -33,28 +36,39 @@ const pad = (s, n) => {
   return s + ' '.repeat(Math.max(0, n - w));
 };
 
+const ushersByWeek = {};
+sched.usherWeeks.forEach(w => { ushersByWeek[w.iso] = w; });
+
 console.log(`\n${year}년 ${month}월 새벽 설교자 및 백업   (기준일 ${cfg.anchor})\n`);
-console.log(pad('', 18) + ['월', '화', '수', '목', '금', '토'].map(d => pad(d, 12)).join(''));
+console.log(pad('', 18) + ['월', '화', '수', '목', '금', '토'].map(d => pad(d, 12)).join('') +
+  '  |  ' + '현관안내(수,토)');
 for (const week of grid.weeks) {
-  const rows = { Date: [], 설교자: [], 방송실: [], '수요현관/토요찬양': [] };
+  const rows = { Date: [], 설교자: [], 방송실: [], '수요/토요': [] };
+  let wedIso = '', wedDay = '', satDay = '';
   for (const cell of week) {
     const a = sched.byIso[cell.iso] || {};
     rows.Date.push(cell.inMonth ? cell.day : `(${cell.day})`);
-    rows['설교자'].push(a.offSermon ? '[휴일]' : (a.preacher || '-'));
-    rows['방송실'].push(a.offBroadcast ? '[휴일]' : (a.broadcast || '-') + (a.swapNote ? '*' : ''));
+    rows['설교자'].push((a.preacher || '-') + (a.mondayNote ? '#' : ''));
+    rows['방송실'].push((a.broadcast || '-') + (a.swapNote ? '*' : '') + (a.mondayNote ? '#' : ''));
     const isWed = cfg.doorDows.includes(cell.dow);
     const isSat = cfg.praiseDows.includes(cell.dow);
-    rows['수요현관/토요찬양'].push(
-      isWed ? (a.offDoor ? '[휴일]' : a.door || '') :
-      isSat ? (a.offPraise ? '[휴일]' : a.praise || '') : '');
+    rows['수요/토요'].push(isWed ? (a.door || '') : isSat ? (a.praise || '') : '');
+    if (isWed) { wedIso = cell.iso; wedDay = cell.day; }
+    if (isSat) satDay = cell.day;
   }
+  const w = ushersByWeek[wedIso] || { ushers: [] };
+  const side = [`(${wedDay},${satDay})`].concat(w.ushers.length ? w.ushers : ['-', '-', '-']);
+
   console.log('-'.repeat(90));
-  for (const label of Object.keys(rows)) {
-    console.log(pad(label, 18) + rows[label].map(v => pad(v, 12)).join(''));
-  }
+  Object.keys(rows).forEach((label, i) => {
+    console.log(pad(label, 18) + rows[label].map(v => pad(v, 12)).join('') +
+      '  |  ' + (side[i] || ''));
+  });
 }
 console.log('-'.repeat(90));
-console.log('\n* 설교자와 겹쳐 다음날 방송실과 맞바꾼 자리');
-console.log('[휴일] 은 시트에서 빈 칸으로 나옵니다 (직접 입력)');
+console.log('\n* 설교자와 겹쳐 다음날(같은 요일 묶음) 방송실과 맞바꾼 자리');
+console.log('# 그 달 월요일에 두 번 걸려 순서를 바꾼 자리');
+console.log('휴일로 잡은 날은 휴일(설교)·휴일(백업) 명단에서 들어갑니다 (한목사 / 노집사)');
 console.log('토요일은 설교·방송을 별도 명단으로 돌립니다 (강목사·조전도사 / 임집사·강목사)');
+console.log('현관안내는 수요일이 든 주마다 세 명씩 돌아갑니다');
 console.log('예외: 이목사 9/7~9/12 휴가, 정집사 9/2 방송 제외, 9/16~9/17 휴일\n');

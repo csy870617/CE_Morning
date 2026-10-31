@@ -14,8 +14,12 @@ var CE_ROLE = {
   SERMON: 'SERMON',
   BROADCAST: 'BROADCAST',
   DOOR: 'DOOR',
-  PRAISE: 'PRAISE'
+  PRAISE: 'PRAISE',
+  USHER: 'USHER'
 };
+
+/** 주마다 세우는 현관안내 인원 */
+var CE_USHER_PER_WEEK = 3;
 
 /**
  * 달력에 이 말을 적으면 그날은 배정에서 통째로 빠집니다.
@@ -31,11 +35,15 @@ var CE_ROLE_LABELS = {
   '설교자': CE_ROLE.SERMON,
   '방송': CE_ROLE.BROADCAST,
   '방송실': CE_ROLE.BROADCAST,
+  '수요백업': CE_ROLE.DOOR,
   '수요현관': CE_ROLE.DOOR,
   '현관': CE_ROLE.DOOR,
   '수요저녁 현관': CE_ROLE.DOOR,
+  '토요백업': CE_ROLE.PRAISE,
   '토요찬양': CE_ROLE.PRAISE,
-  '찬양': CE_ROLE.PRAISE
+  '찬양': CE_ROLE.PRAISE,
+  '현관안내': CE_ROLE.USHER,
+  '안내': CE_ROLE.USHER
 };
 
 /* ------------------------------------------------------------------ */
@@ -107,6 +115,22 @@ function ceIsHoliday(iso, role, exceptions) {
     var ex = exceptions[i];
     if (!ceIsHolidayName(ex.name)) continue;
     if (ex.role !== CE_ROLE.ALL && ex.role !== role) continue;
+    var end = ex.end || ex.start;
+    if (iso >= ex.start && iso <= end) return true;
+  }
+  return false;
+}
+
+/**
+ * 그 역할을 콕 집어 '휴일(현관안내)' 로 적은 경우만 봅니다.
+ * 현관안내는 수요일과 토요일을 함께 맡는 주 단위 담당이라, 수요일 하루가
+ * 휴일이라고 그 주 안내를 통째로 비우면 토요일이 빈손이 됩니다.
+ */
+function ceIsHolidayForRoleOnly(iso, role, exceptions) {
+  for (var i = 0; i < exceptions.length; i++) {
+    var ex = exceptions[i];
+    if (!ceIsHolidayName(ex.name)) continue;
+    if (ex.role !== role) continue;
     var end = ex.end || ex.start;
     if (iso >= ex.start && iso <= end) return true;
   }
@@ -194,6 +218,65 @@ function ceResolveConflicts(days, exceptions) {
   return days;
 }
 
+/**
+ * 월요일 담당이 한 달에 두 번 걸리면 뒤따르는 평일과 순서를 바꿉니다.
+ * 설교와 방송실에 각각 따로 적용합니다. 휴일은 다른 명단이라 셈에서 뺍니다.
+ */
+function ceEnforceMondayLimit(days, field, role, exceptions, label) {
+  var seen = {};
+  var what = label || (field === 'preacher' ? '설교' : '방송실');
+
+  function addNote(day, text) {
+    day.mondayNote = (day.mondayNote ? day.mondayNote + ' / ' : '') + what + ' ' + text;
+  }
+  for (var i = 0; i < days.length; i++) {
+    var a = days[i];
+    if (a.dow !== 1 || !a[field] || a.swapGroup === 'holiday') continue;
+
+    var month = a.iso.slice(0, 7);
+    if (!seen[month]) seen[month] = {};
+    if (!seen[month][a[field]]) {
+      seen[month][a[field]] = true;
+      continue;
+    }
+
+    // 그 달 월요일에 이미 선 사람입니다. 뒤쪽 평일과 바꿔 봅니다.
+    var done = false;
+    for (var j = i + 1; j < days.length; j++) {
+      var b = days[j];
+      if (b.iso.slice(0, 7) !== month) break;       // 달을 넘기면서까지 찾지는 않습니다
+      if (b.dow === 1) continue;                    // 월요일끼리 바꾸면 뜻이 없습니다
+      if (b.swapGroup !== a.swapGroup) continue;    // 평일·토요 명단을 섞지 않습니다
+      if (!b[field] || seen[month][b[field]]) continue;
+      if (!ceMondaySwapOk(a, b, field, role, exceptions)) continue;
+
+      var tmp = a[field];
+      a[field] = b[field];
+      b[field] = tmp;
+      addNote(a, b.iso + ' 과 순서 바꿈 (월요일 중복)');
+      addNote(b, a.iso + ' 과 순서 바꿈 (월요일 중복)');
+      done = true;
+      break;
+    }
+
+    seen[month][a[field]] = true;
+    if (!done) {
+      a.mondayWarning = (a.mondayWarning ? a.mondayWarning + ' / ' : '') +
+        what + ' 담당이 그 달 월요일에 두 번 걸립니다 (바꿀 상대를 찾지 못했습니다)';
+    }
+  }
+  return days;
+}
+
+function ceMondaySwapOk(a, b, field, role, exceptions) {
+  var other = field === 'preacher' ? 'broadcast' : 'preacher';
+  if (b[field] === a[other]) return false;          // 바꾸면 그 날 설교·방송이 겹칩니다
+  if (a[field] === b[other]) return false;
+  if (!ceIsAvailable(b[field], a.iso, role, exceptions)) return false;
+  if (!ceIsAvailable(a[field], b.iso, role, exceptions)) return false;
+  return true;
+}
+
 /* ------------------------------------------------------------------ */
 /* 전체 배정                                                           */
 /* ------------------------------------------------------------------ */
@@ -221,9 +304,13 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
   var dawnDays = [];
   var doorDays = [];
   var praiseDays = [];
+  var usherWeeks = [];
 
   // 명단마다 자기 순번을 따로 갖습니다.
-  var ptr = { sermon: 0, broadcast: 0, satSermon: 0, satBroadcast: 0, door: 0, praise: 0 };
+  var ptr = {
+    sermon: 0, broadcast: 0, satSermon: 0, satBroadcast: 0, door: 0, praise: 0,
+    holidaySermon: 0, holidayBroadcast: 0, usher: 0
+  };
 
   function has(key) {
     return rot[key] && rot[key].length > 0;
@@ -240,6 +327,20 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     return picked.name;
   }
 
+  /** 현관안내는 한 주에 여러 명을 세웁니다. 같은 주에 같은 사람이 겹치지 않게 뽑습니다. */
+  function takeUshers(iso, count) {
+    var out = [];
+    var tries = (rot.usher || []).length;
+    while (out.length < count && tries > 0) {
+      var picked = cePickNext(rot.usher, ptr.usher, iso, CE_ROLE.USHER, ex);
+      if (!picked.name) break;
+      ptr.usher = picked.ptr;
+      if (out.indexOf(picked.name) < 0) out.push(picked.name);
+      tries--;
+    }
+    return out;
+  }
+
   for (var d = anchor; ceIso(d) <= endIso; d = ceAddDays(d, 1)) {
     var iso = ceIso(d);
     var dow = d.getUTCDay();
@@ -251,8 +352,12 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
       var offSermon = ceIsHoliday(iso, CE_ROLE.SERMON, ex);
       var offBroadcast = ceIsHoliday(iso, CE_ROLE.BROADCAST, ex);
 
-      var preacher = offSermon ? '' : take(sermonKey, iso, CE_ROLE.SERMON);
-      var broadcast = offBroadcast ? '' : take(broadcastKey, iso, CE_ROLE.BROADCAST);
+      // 휴일로 잡은 날은 휴일 명단으로 돕니다. 그 명단이 비어 있으면 빈칸으로 둡니다.
+      if (offSermon) sermonKey = 'holidaySermon';
+      if (offBroadcast) broadcastKey = 'holidayBroadcast';
+
+      var preacher = (offSermon && !has('holidaySermon')) ? '' : take(sermonKey, iso, CE_ROLE.SERMON);
+      var broadcast = (offBroadcast && !has('holidayBroadcast')) ? '' : take(broadcastKey, iso, CE_ROLE.BROADCAST);
 
       dawnDays.push({
         iso: iso,
@@ -263,13 +368,14 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
         offBroadcast: offBroadcast,
         // 명단 자체가 비어 있으면 빈칸이 당연하므로 알리지 않습니다.
         // 명단은 있는데 전원 예외라 못 채운 경우만 표시합니다.
-        gapSermon: !offSermon && !preacher && has(sermonKey),
-        gapBroadcast: !offBroadcast && !broadcast && has(broadcastKey),
+        gapSermon: !preacher && has(sermonKey),
+        gapBroadcast: !broadcast && has(broadcastKey),
         smGroup: sermonKey,
         bcGroup: broadcastKey,
-        // 맞바꾸기는 토요일과 평일을 갈라서 봅니다.
+        // 맞바꾸기는 휴일·토요일·평일을 갈라서 봅니다. 서로 다른 명단이기 때문입니다.
         // 토요 명단을 비워 둬 평일 명단으로 돌더라도 토요일은 토요일끼리만 바꿉니다.
-        swapGroup: satDows.indexOf(dow) >= 0 ? 'sat' : 'week'
+        swapGroup: (offSermon || offBroadcast) ? 'holiday'
+          : (satDows.indexOf(dow) >= 0 ? 'sat' : 'week')
       });
     }
 
@@ -279,6 +385,16 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
       doorDays.push({
         iso: iso, dow: dow, door: doorName, offDoor: offDoor,
         gapDoor: !offDoor && !doorName && has('door')
+      });
+    }
+
+    if (doorDows.indexOf(dow) >= 0) {
+      // 현관안내는 그 주의 수요일을 기준으로 한 번, 세 명씩 세웁니다.
+      var offUsher = ceIsHolidayForRoleOnly(iso, CE_ROLE.USHER, ex);
+      var ushers = offUsher ? [] : takeUshers(iso, CE_USHER_PER_WEEK);
+      usherWeeks.push({
+        iso: iso, dow: dow, ushers: ushers, offUsher: offUsher,
+        gapUsher: !offUsher && has('usher') && ushers.length < CE_USHER_PER_WEEK
       });
     }
 
@@ -293,16 +409,20 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
   }
 
   ceResolveConflicts(dawnDays, ex);
-  // 수요현관·토요찬양은 그날 설교자·방송실과 겹쳐도 그대로 둡니다. 명단 순서가 우선입니다.
+  // 수요백업·토요백업은 그날 설교자·방송실과 겹쳐도 그대로 둡니다. 명단 순서가 우선입니다.
+
+  // 겹침을 푼 뒤에 월요일 중복을 정리합니다. 순서를 바꿀 때 겹침이 다시 생기지 않는지 봅니다.
+  ceEnforceMondayLimit(dawnDays, 'preacher', CE_ROLE.SERMON, ex, '설교');
+  ceEnforceMondayLimit(dawnDays, 'broadcast', CE_ROLE.BROADCAST, ex, '방송실');
 
   var byIso = {};
   function slot(iso) {
     if (!byIso[iso]) {
       byIso[iso] = {
-        iso: iso, preacher: '', broadcast: '', door: '', praise: '',
-        offSermon: false, offBroadcast: false, offDoor: false, offPraise: false,
-        gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false,
-        swapNote: '', warning: ''
+        iso: iso, preacher: '', broadcast: '', door: '', praise: '', ushers: [],
+        offSermon: false, offBroadcast: false, offDoor: false, offPraise: false, offUsher: false,
+        gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false, gapUsher: false,
+        swapNote: '', warning: '', mondayNote: '', mondayWarning: ''
       };
     }
     return byIso[iso];
@@ -320,6 +440,8 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     cell.gapBroadcast = !!day.gapBroadcast;
     cell.swapNote = day.swapNote || '';
     cell.warning = day.warning || '';
+    cell.mondayNote = day.mondayNote || '';
+    cell.mondayWarning = day.mondayWarning || '';
   }
   for (i = 0; i < doorDays.length; i++) {
     var wd = doorDays[i];
@@ -335,8 +457,18 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     pc.offPraise = !!pd.offPraise;
     pc.gapPraise = !!pd.gapPraise;
   }
+  for (i = 0; i < usherWeeks.length; i++) {
+    var uw = usherWeeks[i];
+    var uc = slot(uw.iso);
+    uc.ushers = uw.ushers;
+    uc.offUsher = !!uw.offUsher;
+    uc.gapUsher = !!uw.gapUsher;
+  }
 
-  return { byIso: byIso, dawnDays: dawnDays, doorDays: doorDays, praiseDays: praiseDays };
+  return {
+    byIso: byIso, dawnDays: dawnDays, doorDays: doorDays,
+    praiseDays: praiseDays, usherWeeks: usherWeeks
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -387,9 +519,12 @@ if (typeof module !== 'undefined') {
     CE_HOLIDAY_NAMES: CE_HOLIDAY_NAMES,
     ceIsHolidayName: ceIsHolidayName,
     ceIsHoliday: ceIsHoliday,
+    ceIsHolidayForRoleOnly: ceIsHolidayForRoleOnly,
     ceIsAvailable: ceIsAvailable,
     cePickNext: cePickNext,
     ceResolveConflicts: ceResolveConflicts,
+    ceEnforceMondayLimit: ceEnforceMondayLimit,
+    CE_USHER_PER_WEEK: CE_USHER_PER_WEEK,
     ceBuildSchedule: ceBuildSchedule,
     ceMonthGrid: ceMonthGrid
   };
