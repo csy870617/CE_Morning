@@ -351,8 +351,7 @@ function ceWriteNamePicker(sh, startRow, totalCols, grid, sched, cfg) {
   if (!names.length) return startRow - 1;
 
   sh.getRange(startRow, 1, 1, totalCols).merge()
-    .setValue('이름을 체크하면 그 사람 칸이 표시됩니다 — 설교는 노랑, 방송·수요/토요·현관안내는 연한 초록. ' +
-      '(한 사람씩만 됩니다. 다른 사람을 체크하면 먼저 체크한 것이 풀립니다)')
+    .setValue('이름을 체크하면 그 사람 칸이 표시됩니다 — 설교는 노랑, 방송·수요/토요·현관안내는 연한 초록.')
     .setFontSize(9).setFontColor('#666666');
 
   var perLine = CE_OUT.COLS;                 // 표 너비에 맞춰 한 줄에 6명씩

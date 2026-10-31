@@ -1322,7 +1322,7 @@ test('달이 둘이면 서로 다른 표의 체크는 서로 간섭하지 않는
   assert.strictEqual(oct._get(octBox.row, octBox.col), true);
 });
 
-test('설명줄도 한 사람씩만 된다고 알려 준다', () => {
+test('설명줄에는 색깔만 적고 괄호 설명은 붙이지 않는다', () => {
   const { ctx, ss } = prepared(fullRotations());
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
@@ -1332,8 +1332,10 @@ test('설명줄도 한 사람씩만 된다고 알려 준다', () => {
     if (v.indexOf('이름을 체크하면') === 0) text = v;
   }
   assert.ok(text, '설명줄을 찾지 못했다');
-  assert.ok(text.indexOf('한 사람씩만') >= 0, text);
-  assert.ok(text.indexOf('여러 명') < 0, '여러 명 동시에 된다는 말은 빠져야 한다: ' + text);
+  assert.ok(text.indexOf('노랑') >= 0 && text.indexOf('연한 초록') >= 0, text);
+  assert.ok(text.indexOf('(') < 0, '괄호 설명이 남아 있다: ' + text);
+  assert.ok(text.indexOf('여러 명') < 0, text);
+  assert.ok(text.indexOf('한 사람씩만') < 0, text);
 });
 
 /* ---------- 초기 설정 만들기 안내창 ---------- */
