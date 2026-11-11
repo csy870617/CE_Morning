@@ -936,4 +936,205 @@ test('맞바꿀 상대는 2주 안에서만 찾는다', () => {
   assert.ok(days[0].warning);
 });
 
+/* ---------- 같은 요일 설교는 한 달에 두 번까지 ---------- */
+
+const DOW_CFG = {
+  anchor: '2026-08-31', dawnDows: [1, 2, 3, 4, 5, 6],
+  satDows: [6], doorDows: [3], praiseDows: [6]
+};
+
+/** 평일 한 칸 */
+function wd(iso, dow, preacher, broadcast) {
+  return { iso: iso, dow: dow, preacher: preacher, broadcast: broadcast || '',
+    bcGroup: 'broadcast', swapGroup: 'week' };
+}
+
+test('두 번까지는 그대로 둔다', () => {
+  const days = [
+    wd('2026-09-07', 1, '가'), wd('2026-09-08', 2, '나'),
+    wd('2026-09-14', 1, '가'), wd('2026-09-15', 2, '다')
+  ];
+  R.ceEnforceSameDowLimit(days, []);
+  assert.deepStrictEqual(days.map(d => d.preacher), ['가', '나', '가', '다']);
+  days.forEach(d => assert.strictEqual(d.dowNote, undefined));
+});
+
+test('같은 요일 세 번째는 다른 요일과 순서를 바꾼다', () => {
+  const days = [
+    wd('2026-09-07', 1, '가'), wd('2026-09-14', 1, '가'),
+    wd('2026-09-21', 1, '가'),          // 월요일 세 번째
+    wd('2026-09-22', 2, '나')
+  ];
+  R.ceEnforceSameDowLimit(days, []);
+  assert.strictEqual(days[2].preacher, '나', '세 번째 월요일이 다른 사람으로 바뀐다');
+  assert.strictEqual(days[3].preacher, '가');
+  assert.ok(days[2].dowNote.indexOf('월요일 설교가 세 번째라') === 0, days[2].dowNote);
+  assert.ok(days[3].dowNote.indexOf('2026-09-21') === 0, days[3].dowNote);
+  assert.strictEqual(days[2].dowWarning, undefined);
+});
+
+test('같은 요일끼리는 바꾸지 않는다', () => {
+  const days = [
+    wd('2026-09-07', 1, '가'), wd('2026-09-14', 1, '가'),
+    wd('2026-09-21', 1, '가'), wd('2026-09-28', 1, '나')
+  ];
+  R.ceEnforceSameDowLimit(days, []);
+  assert.strictEqual(days[2].preacher, '가', '월요일끼리 바꿔도 뜻이 없다');
+  assert.ok(days[2].dowWarning);
+});
+
+test('바꾸면 그 요일이 세 번이 되는 상대는 넘어간다', () => {
+  // 화요일: 가·가·가·나·나 → '가' 의 세 번째 화요일(9/15)을 옮겨야 한다.
+  // 9/16 의 '나' 는 이미 화요일 두 번이라, 화요일로 데려오면 세 번이 된다.
+  const days = [
+    wd('2026-09-01', 2, '가'), wd('2026-09-08', 2, '가'),
+    wd('2026-09-15', 2, '가'),          // 화요일 세 번째
+    wd('2026-09-16', 3, '나'),          // 데려오면 '나' 가 화요일 세 번 → 넘어간다
+    wd('2026-09-17', 4, '다'),
+    wd('2026-09-22', 2, '나'), wd('2026-09-29', 2, '나')
+  ];
+  R.ceEnforceSameDowLimit(days, []);
+  assert.strictEqual(days[2].preacher, '다', '목요일 사람을 데려온다');
+  assert.strictEqual(days[4].preacher, '가');
+  assert.strictEqual(days[3].preacher, '나', '화요일 두 번인 사람은 건드리지 않는다');
+});
+
+test('옮기는 쪽에도 이득이면 그대로 맞바꾼다', () => {
+  // 월요일 '가' 세 번, 화요일 '나' 세 번 — 둘을 맞바꾸면 양쪽 다 두 번이 된다
+  const days = [
+    wd('2026-09-07', 1, '가'), wd('2026-09-08', 2, '나'),
+    wd('2026-09-14', 1, '가'), wd('2026-09-15', 2, '나'),
+    wd('2026-09-21', 1, '가'), wd('2026-09-22', 2, '나')
+  ];
+  R.ceEnforceSameDowLimit(days, []);
+  assert.strictEqual(days[4].preacher, '나');
+  assert.strictEqual(days[5].preacher, '가');
+  const count = {};
+  days.forEach(d => {
+    const k = d.dow + '/' + d.preacher;
+    count[k] = (count[k] || 0) + 1;
+    assert.ok(count[k] <= 2, k + ' 가 ' + count[k] + '번');
+  });
+});
+
+test('옮겨 간 쪽이 그 요일 두 번을 넘겨도 안 된다', () => {
+  const days = [
+    wd('2026-09-02', 3, '가'), wd('2026-09-09', 3, '가'),   // '가' 는 이미 수요일 두 번
+    wd('2026-09-07', 1, '나'), wd('2026-09-14', 1, '나'),
+    wd('2026-09-21', 1, '나'),                               // 월요일 세 번째
+    wd('2026-09-23', 3, '다')                                // 바꾸면 '나' 가 수요일로 - 괜찮다
+  ];
+  days.sort((a, b) => (a.iso < b.iso ? -1 : 1));
+  R.ceEnforceSameDowLimit(days, []);
+  const at = iso => days.filter(d => d.iso === iso)[0].preacher;
+  assert.strictEqual(at('2026-09-21'), '다');
+  assert.strictEqual(at('2026-09-23'), '나');
+  assert.strictEqual(at('2026-09-02'), '가', '수요일 두 번인 사람은 그대로');
+});
+
+test('그날 방송실과 겹치게 되는 상대는 넘어간다', () => {
+  const days = [
+    wd('2026-09-07', 1, '가', 'ㄱ'), wd('2026-09-14', 1, '가', 'ㄴ'),
+    wd('2026-09-21', 1, '가', 'ㄷ'),
+    wd('2026-09-22', 2, 'ㄷ', 'ㄹ'),    // 데려오면 9/21 설교자=방송실
+    wd('2026-09-23', 3, '라', 'ㅁ')
+  ];
+  R.ceEnforceSameDowLimit(days, []);
+  assert.strictEqual(days[2].preacher, '라');
+  assert.strictEqual(days[3].preacher, 'ㄷ', '겹치는 상대는 건드리지 않는다');
+});
+
+test('그날 휴가인 사람은 데려오지 않는다', () => {
+  const days = [
+    wd('2026-09-07', 1, '가'), wd('2026-09-14', 1, '가'),
+    wd('2026-09-21', 1, '가'), wd('2026-09-22', 2, '나'), wd('2026-09-23', 3, '다')
+  ];
+  const ex = [{ name: '나', start: '2026-09-21', end: '2026-09-21', role: R.CE_ROLE.ALL }];
+  R.ceEnforceSameDowLimit(days, ex);
+  assert.strictEqual(days[2].preacher, '다');
+  assert.strictEqual(days[3].preacher, '나');
+});
+
+test('뒤가 막히면 앞쪽에서도 찾는다', () => {
+  const days = [
+    wd('2026-09-02', 3, '나'),          // 앞쪽 수요일
+    wd('2026-09-07', 1, '가'), wd('2026-09-14', 1, '가'),
+    wd('2026-09-28', 1, '가')           // 월요일 세 번째인데 뒤에 평일이 없다
+  ];
+  R.ceEnforceSameDowLimit(days, []);
+  assert.strictEqual(days[3].preacher, '나');
+  assert.strictEqual(days[0].preacher, '가');
+});
+
+test('달을 넘기면서까지 찾지는 않는다', () => {
+  const days = [
+    wd('2026-09-07', 1, '가'), wd('2026-09-14', 1, '가'), wd('2026-09-28', 1, '가'),
+    wd('2026-10-01', 4, '나')
+  ];
+  R.ceEnforceSameDowLimit(days, []);
+  assert.strictEqual(days[2].preacher, '가');
+  assert.strictEqual(days[3].preacher, '나', '다음 달은 건드리지 않는다');
+  assert.ok(days[2].dowWarning);
+});
+
+test('달이 바뀌면 횟수를 다시 센다', () => {
+  const days = [
+    wd('2026-09-07', 1, '가'), wd('2026-09-14', 1, '가'),
+    wd('2026-10-05', 1, '가'), wd('2026-10-12', 1, '가')
+  ];
+  R.ceEnforceSameDowLimit(days, []);
+  assert.deepStrictEqual(days.map(d => d.preacher), ['가', '가', '가', '가']);
+  days.forEach(d => assert.strictEqual(d.dowNote, undefined));
+});
+
+test('토요일과 휴일은 이 규칙에서 뺀다', () => {
+  const days = [
+    satDay('2026-09-05', '강', '임'), satDay('2026-09-12', '강', '임'),
+    satDay('2026-09-19', '강', '임'), satDay('2026-09-26', '강', '임'),
+    { iso: '2026-09-07', dow: 1, preacher: '휴설', broadcast: '휴백', swapGroup: 'holiday' },
+    { iso: '2026-09-14', dow: 1, preacher: '휴설', broadcast: '휴백', swapGroup: 'holiday' },
+    { iso: '2026-09-21', dow: 1, preacher: '휴설', broadcast: '휴백', swapGroup: 'holiday' }
+  ];
+  R.ceEnforceSameDowLimit(days, []);
+  days.forEach(d => {
+    assert.strictEqual(d.dowNote, undefined, d.iso + ' 를 건드렸다');
+    assert.strictEqual(d.dowWarning, undefined, d.iso + ' 에 경고를 남겼다');
+  });
+});
+
+test('배정 전체에서 같은 요일 설교가 두 번을 넘지 않는다', () => {
+  // 평일이 주 5칸이라 명단이 5명이면 매주 같은 요일에 같은 사람이 섭니다
+  const rot = {
+    sermon: ['설1', '설2', '설3', '설4', '설5'],
+    broadcast: ['방1', '방2', '방3', '방4', '방5', '방6', '방7'],
+    satSermon: ['토설'], satBroadcast: ['토방']
+  };
+  const g = R.ceMonthGrid(2026, 9);
+  const s = R.ceBuildSchedule(DOW_CFG, rot, [], g.buildEndIso);
+  const count = {};
+  s.dawnDays.filter(d => d.iso.slice(0, 7) === '2026-09' && d.swapGroup === 'week')
+    .forEach(d => {
+      const k = d.dow + '/' + d.preacher;
+      count[k] = (count[k] || 0) + 1;
+      assert.ok(count[k] <= R.CE_SAME_DOW_MAX,
+        R.CE_DOW_NAMES[d.dow] + '요일 ' + d.preacher + ' 가 ' + count[k] + '번');
+    });
+  assert.ok(s.dawnDays.some(d => d.dowNote), '바꾼 자리가 있어야 한다');
+});
+
+test('설교자와 방송실 겹침은 이 규칙 뒤에도 남지 않는다', () => {
+  const rot = {
+    sermon: ['가', '나', '다', '라', '마'],
+    broadcast: ['가', '나', '다', '라', '마', '바', '사'],
+    satSermon: ['강'], satBroadcast: ['임']
+  };
+  const g = R.ceMonthGrid(2026, 9);
+  const s = R.ceBuildSchedule(DOW_CFG, rot, [], g.buildEndIso);
+  s.dawnDays.forEach(d => {
+    if (d.preacher && d.broadcast && d.preacher === d.broadcast) {
+      assert.ok(d.warning, d.iso + ' 에서 겹치는데 경고가 없다');
+    }
+  });
+});
+
 console.log('\n' + passed + ' passed');

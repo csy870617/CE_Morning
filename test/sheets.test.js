@@ -1258,6 +1258,83 @@ test('설명줄에는 색깔만 적고 괄호 설명은 붙이지 않는다', ()
   assert.ok(text.indexOf('한 사람씩만') < 0, text);
 });
 
+/* ---------- 같은 요일 설교는 한 달에 두 번까지 ---------- */
+
+/** 평일이 주 5칸이라 설교 명단이 5명이면 매주 같은 요일에 같은 사람이 섭니다. */
+function fiveSermons() {
+  const r = fullRotations();
+  r['설교'] = ['설1', '설2', '설3', '설4', '설5'];
+  return r;
+}
+
+test('표에서도 같은 요일 설교가 두 번을 넘지 않는다', () => {
+  const { ctx, ss } = prepared(fiveSermons());
+  ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+
+  // 첫 블록 월요일부터 날짜를 되살려 그 달 칸만 셉니다
+  const first = new Date(Date.UTC(2026, 8, 1));
+  const start = new Date(first.getTime() - (first.getUTCDay() - 1) * 86400000);
+  const count = {};
+  let base = 3, w = 0;
+  while (String(sh._get(base, 1)) === 'Date') {
+    for (let c = 2; c <= 6; c++) {           // 월~금만 (토요일은 명단이 따로 돕니다)
+      const iso = new Date(start.getTime() + (w * 7 + (c - 2)) * 86400000).toISOString().slice(0, 10);
+      if (iso.slice(0, 7) !== '2026-09') continue;
+      const name = String(sh._get(base + 1, c) || '');
+      if (!name) continue;
+      const k = c + '/' + name;
+      count[k] = (count[k] || 0) + 1;
+      assert.ok(count[k] <= 2,
+        iso + ' ' + name + ' 가 그 요일에 ' + count[k] + '번 (두 번까지여야 한다)');
+    }
+    base += 4; w++;
+  }
+  assert.ok(Object.keys(count).length > 0, '센 칸이 없다');
+});
+
+test('바꾼 칸에 메모가 붙고 배정 직후에도 알려 준다', () => {
+  const { ctx, ss } = prepared(fiveSermons());
+  const out = ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+
+  // 설교자 줄(블록 Date 줄 + 1) 에 메모가 붙는다
+  const sermonRows = [4, 8, 12, 16, 20];
+  const notes = [...sh.notes.entries()]
+    .filter(([k]) => sermonRows.indexOf(Number(k.split(',')[0])) >= 0)
+    .map(([, v]) => String(v));
+  assert.ok(notes.length > 0, '설교자 줄에 메모가 없다');
+  assert.ok(notes.some(n => n.indexOf('설교가 세 번째라') >= 0), notes.join(' | '));
+  assert.ok(notes.some(n => n.indexOf('과 순서 바꿈') >= 0), notes.join(' | '));
+
+  const summary = plain(out.notes).join('\n');
+  assert.ok(summary.indexOf('같은 요일 설교가 세 번째라 순서를 바꾼 날') >= 0, summary);
+  assert.deepStrictEqual(plain(out.warnings), [], '풀렸으면 경고가 없어야 한다');
+});
+
+test('못 풀면 진한 빨강과 함께 이유를 알려 준다', () => {
+  // 설교 명단이 한 명뿐이면 매일 그 사람이라 요일을 바꿔도 소용이 없다
+  const { ctx, ss } = prepared({ '설교': ['설1'], '방송': ['방1', '방2'] });
+  const out = ctx.ceGenerateMonth(2026, 9);
+  const sh = ss.getSheetByName('2026-09');
+
+  assert.ok(out.warnings.join(' ').indexOf('세 번 이상입니다') >= 0, plain(out.warnings).join(' '));
+  assert.ok(out.notes.join(' ').indexOf('명단 인원을 늘리거나 줄이면') >= 0, plain(out.notes).join(' '));
+  // 세 번째가 되는 칸이 진한 빨강
+  let painted = 0;
+  [4, 8, 12, 16, 20].forEach(r => {
+    for (let c = 2; c <= 6; c++) if (sh.getRange(r, c).getBackground() === '#ea9999') painted++;
+  });
+  assert.ok(painted > 0, '못 푼 칸을 진한 빨강으로 표시해야 한다');
+});
+
+test('토요일 설교가 되풀이되어도 경고하지 않는다', () => {
+  // 토요설교가 한 명이면 그 달 토요일마다 같은 사람입니다. 바꿀 방법이 없으니 알리지 않습니다.
+  const { ctx } = prepared(fullRotations());
+  const out = ctx.ceGenerateMonth(2026, 9);
+  assert.ok(out.warnings.join(' ').indexOf('세 번 이상입니다') < 0, plain(out.warnings).join(' '));
+});
+
 /* ---------- 전체 점검에서 찾아 고친 것들 ---------- */
 
 test('앞뒤 달 시트가 겹치는 날짜에서 같은 이름을 쓴다', () => {

@@ -9,13 +9,14 @@
  *   1  격자는 주마다 월~토 6칸
  *   2  같은 날 설교자=방송실 이면 반드시 경고가 있다
  *   3  방송실 교대는 같은 요일 묶음(평일·토요) 안에서만 일어난다
- *   4  현관안내는 그 주 수요백업·토요백업과 겹치지 않고, 주 안에 중복이 없다
- *   5  예외자(휴가)는 그 역할에 배정되지 않는다
- *   6  휴일은 휴일 명단에서만 채운다 (명단이 비면 빈칸)
- *   7  배정된 이름은 반드시 그 명단 안의 이름
- *   8  새벽예배 요일이 아닌 날에는 배정이 없다
- *   9  같은 달을 두 번 계산하면 결과가 같다
- *  10  앞뒤 달 시트가 겹치는 날짜에서 같은 이름을 쓴다
+ *   4  같은 사람이 그 달 같은 요일 설교에 두 번까지 (못 풀면 경고)
+ *   5  현관안내는 그 주 수요백업·토요백업과 겹치지 않고, 주 안에 중복이 없다
+ *   6  예외자(휴가)는 그 역할에 배정되지 않는다
+ *   7  휴일은 휴일 명단에서만 채운다 (명단이 비면 빈칸)
+ *   8  배정된 이름은 반드시 그 명단 안의 이름
+ *   9  새벽예배 요일이 아닌 날에는 배정이 없다
+ *  10  같은 달을 두 번 계산하면 결과가 같다
+ *  11  앞뒤 달 시트가 겹치는 날짜에서 같은 이름을 쓴다
  */
 const R = require('../src/Rotation.gs');
 
@@ -60,6 +61,15 @@ function audit(label, cfg, rot, ex, y, m) {
     }
     const dawn = cfg.dawnDows.indexOf(R.ceParseIso(d.iso).getUTCDay()) >= 0;
     if (!dawn && (d.preacher || d.broadcast)) bad(tag + ' ' + d.iso + ' 는 새벽예배 요일이 아닌데 배정됐다');
+  });
+
+  const dow = {};
+  s.dawnDays.filter(d => d.swapGroup === 'week' && d.preacher).forEach(d => {
+    const k = d.iso.slice(0, 7) + '/' + d.dow + '/' + d.preacher;
+    dow[k] = (dow[k] || 0) + 1;
+    if (dow[k] > R.CE_SAME_DOW_MAX && !d.dowWarning) {
+      bad(tag + ' ' + d.iso + ' ' + d.preacher + ' 가 그 요일에 ' + dow[k] + '번인데 경고가 없다');
+    }
   });
 
   s.usherWeeks.forEach(w => {

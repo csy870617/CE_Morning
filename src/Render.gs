@@ -81,6 +81,7 @@ function ceGenerateMonth(year, month) {
     warnings: ceCollectWarnings(grid, sched, cfg),
     notes: ceFallbackNotes(rot, cfg)
       .concat(ceHolidayListNotes(rot, sched, grid))
+      .concat(ceSameDowHintNotes(sched, grid))
       .concat(ceUnknownNameNotes(rot, ex, grid))
       .concat(ceSwapSummaryNotes(sched, grid))
   };
@@ -161,12 +162,16 @@ function ceShortDay(iso) {
  */
 function ceSwapSummaryNotes(sched, grid) {
   var swapped = [];
+  var moved = [];
   for (var i = 0; i < sched.dawnDays.length; i++) {
     var d = sched.dawnDays[i];
     if (d.iso < grid.startIso || d.iso > grid.endIso) continue;
-    // 맞바꾼 두 날 모두 메모가 붙으므로, 겹쳤던 쪽(앞선 날)만 셉니다.
+    // 맞바꾼 두 날 모두 메모가 붙으므로, 옮긴 쪽만 셉니다.
     if (d.swapNote && d.swapNote.split(' ')[0] > d.iso) {
       swapped.push(ceShortDay(d.iso));
+    }
+    if (d.dowNote && d.dowNote.indexOf('세 번째라') > 0) {
+      moved.push(ceShortDay(d.iso) + '(' + CE_DOW_NAMES[d.dow] + ')');
     }
   }
 
@@ -174,12 +179,29 @@ function ceSwapSummaryNotes(sched, grid) {
   if (swapped.length) {
     notes.push('설교자와 겹쳐서 방송실을 맞바꾼 날: ' + swapped.join(', '));
   }
+  if (moved.length) {
+    notes.push('같은 요일 설교가 세 번째라 순서를 바꾼 날: ' + moved.join(', '));
+  }
   if (notes.length) {
     notes.push('바뀐 칸에 메모가 붙어 있습니다. 칸 오른쪽 위 검은 삼각형에 마우스를 올리면 보입니다.');
   }
   return notes;
 }
 
+
+/** 같은 요일 설교 횟수를 못 맞춘 경우, 왜 그런지 한 번만 덧붙입니다. */
+function ceSameDowHintNotes(sched, grid) {
+  for (var iso in sched.byIso) {
+    if (!Object.prototype.hasOwnProperty.call(sched.byIso, iso)) continue;
+    if (iso < grid.startIso || iso > grid.endIso) continue;
+    if (sched.byIso[iso].dowWarning) {
+      return ['같은 요일 설교가 세 번 이상 남았습니다. 평일이 주 5일이라 ' +
+        '[설교] 명단 인원이 5의 약수(1·5명)면 같은 요일에 같은 사람이 되풀이됩니다. ' +
+        '명단 인원을 늘리거나 줄이면 풀립니다.'];
+    }
+  }
+  return [];
+}
 
 /**
  * 달력에 적힌 이름이 명단에 없으면 알려 줍니다.
@@ -223,6 +245,7 @@ function ceCollectWarnings(grid, sched, cfg) {
       var a = sched.byIso[cell.iso];
       if (!a || cell.iso < grid.startIso) continue;
       if (a.warning) out.push(cell.iso + ' : ' + a.warning);
+      if (a.dowWarning) out.push(cell.iso + ' : ' + a.dowWarning);
       for (var i = 0; i < labels.length; i++) {
         if (a[labels[i].gap]) {
           out.push(cell.iso + ' : ' + labels[i].label + ' 를 채우지 못했습니다 (전원 예외)');
@@ -497,6 +520,12 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
       if (special.off) ceMarkHoliday(sh, base + 3, col);
       if (info.offSermon && info.offBroadcast) {
         sh.getRange(base, col).setNote('휴일');
+      }
+
+      // 설교자 줄 메모 (같은 요일 설교 두 번까지 규칙)
+      ceWriteNote(sh, base + 1, col, [info.dowNote, info.dowWarning]);
+      if (info.dowWarning) {
+        sh.getRange(base + 1, col).setBackground(CE_COLOR.WARN_BG);
       }
 
       // 방송실 줄 메모 (설교자와 겹쳐서 맞바꾼 자리)
