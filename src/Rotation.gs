@@ -243,18 +243,25 @@ function ceResolveConflicts(days, exceptions) {
 
 /* ------------------------------------------------------------------ */
 /* 전체 배정                                                           */
-/* 한 사람이 그 달 같은 요일 설교에 설 수 있는 횟수 */
+/* 한 사람이 그 달 같은 요일에 설 수 있는 횟수 (설교·방송실 각각) */
 var CE_SAME_DOW_MAX = 2;
 
+/* 메모는 표의 줄마다 따로 붙여야 하므로 역할별로 담아 둡니다. */
+var CE_SAME_DOW_FIELDS = {
+  preacher: { note: 'dowNoteSermon', warn: 'dowWarnSermon', label: '설교', is: '가' },
+  broadcast: { note: 'dowNoteBroadcast', warn: 'dowWarnBroadcast', label: '방송실', is: '이' }
+};
+
 /**
- * 같은 사람이 그 달 같은 요일 설교에 세 번 이상 걸리면,
- * 세 번째부터 다른 요일의 설교자와 순서를 바꿉니다.
+ * 같은 사람이 그 달 같은 요일에 세 번 이상 걸리면,
+ * 세 번째부터 다른 요일 담당자와 순서를 바꿉니다. 설교와 방송실에 따로 겁니다.
  *
- * 평일(월~금)끼리만 봅니다. 토요일은 설교 명단이 따로 돌고 그 묶음 안에는
+ * 평일(월~금)끼리만 봅니다. 토요일은 명단이 따로 돌고 그 묶음 안에는
  * 토요일밖에 없어서, 순서를 어떻게 바꿔도 요일이 달라지지 않습니다.
  * 휴일 명단으로 채운 날도 건드리지 않습니다.
  */
-function ceEnforceSameDowLimit(days, exceptions) {
+function ceEnforceSameDowLimit(days, field, role, exceptions) {
+  var spec = CE_SAME_DOW_FIELDS[field];
   /* tally: 지금 배정 기준으로 '달-요일-사람' 이 몇 번인지. 맞바꿀 때마다 고칩니다.
      used:  앞에서부터 세며 이미 남겨 둔 횟수. 세 번째 자리를 가려냅니다. */
   var tally = {};
@@ -270,55 +277,56 @@ function ceEnforceSameDowLimit(days, exceptions) {
     box[m][dow][name] = (box[m][dow][name] || 0) + by;
   }
   function counts(d) {
-    return d.preacher && d.swapGroup === 'week';
+    return d[field] && d.swapGroup === 'week';
   }
 
   var i;
   for (i = 0; i < days.length; i++) {
-    if (counts(days[i])) bump(tally, days[i].iso, days[i].dow, days[i].preacher, 1);
+    if (counts(days[i])) bump(tally, days[i].iso, days[i].dow, days[i][field], 1);
   }
 
   for (i = 0; i < days.length; i++) {
     var a = days[i];
     if (!counts(a)) continue;
 
-    if (at(used, a.iso, a.dow, a.preacher) < CE_SAME_DOW_MAX) {
-      bump(used, a.iso, a.dow, a.preacher, 1);
+    if (at(used, a.iso, a.dow, a[field]) < CE_SAME_DOW_MAX) {
+      bump(used, a.iso, a.dow, a[field], 1);
       continue;
     }
 
-    var b = ceFindSameDowSwap(days, i, 1, tally, exceptions) ||
-            ceFindSameDowSwap(days, i, -1, tally, exceptions);
+    var b = ceFindSameDowSwap(days, i, 1, tally, field, role, exceptions) ||
+            ceFindSameDowSwap(days, i, -1, tally, field, role, exceptions);
     if (b) {
-      bump(tally, a.iso, a.dow, a.preacher, -1);
-      bump(tally, b.iso, b.dow, b.preacher, -1);
-      var tmp = a.preacher;
-      a.preacher = b.preacher;
-      b.preacher = tmp;
-      bump(tally, a.iso, a.dow, a.preacher, 1);
-      bump(tally, b.iso, b.dow, b.preacher, 1);
+      bump(tally, a.iso, a.dow, a[field], -1);
+      bump(tally, b.iso, b.dow, b[field], -1);
+      var tmp = a[field];
+      a[field] = b[field];
+      b[field] = tmp;
+      bump(tally, a.iso, a.dow, a[field], 1);
+      bump(tally, b.iso, b.dow, b[field], 1);
 
       var day = CE_DOW_NAMES[a.dow] + '요일';
-      a.dowNote = day + ' 설교가 세 번째라 ' + b.iso + ' 과 순서 바꿈';
-      b.dowNote = a.iso + ' 과 순서 바꿈 (' + day + ' 설교 세 번째)';
+      a[spec.note] = day + ' ' + spec.label + spec.is + ' 세 번째라 ' + b.iso + ' 과 순서 바꿈';
+      b[spec.note] = a.iso + ' 과 순서 바꿈 (' + day + ' ' + spec.label + ' 세 번째)';
     } else {
-      a.dowWarning = CE_DOW_NAMES[a.dow] + '요일 설교가 그 달에 세 번 이상입니다 ' +
-        '(바꿀 상대를 찾지 못했습니다)';
+      a[spec.warn] = CE_DOW_NAMES[a.dow] + '요일 ' + spec.label + spec.is +
+        ' 그 달에 세 번 이상입니다 (바꿀 상대를 찾지 못했습니다)';
     }
-    bump(used, a.iso, a.dow, a.preacher, 1);
+    bump(used, a.iso, a.dow, a[field], 1);
   }
   return days;
 }
 
 /**
- * 같은 요일 세 번째 설교를 풀어 줄 상대를 한 방향으로 찾습니다.
+ * 같은 요일 세 번째 자리를 풀어 줄 상대를 한 방향으로 찾습니다.
  *   step  1 = 다음 날부터 뒤로,  -1 = 지난 날부터 앞으로
  * 같은 달 안에서, 요일이 다른 평일 중에서 찾습니다.
  * 맞바꾼 뒤 어느 쪽도 같은 요일 두 번을 넘지 않아야 하고,
  * 그날 설교자와 방송실이 겹치게 되거나 휴가와 부딪히면 넘어갑니다.
  */
-function ceFindSameDowSwap(days, from, step, tally, exceptions) {
+function ceFindSameDowSwap(days, from, step, tally, field, role, exceptions) {
   var a = days[from];
+  var other = field === 'preacher' ? 'broadcast' : 'preacher';
   var month = a.iso.slice(0, 7);
   function count(iso, dow, name) {
     var m = iso.slice(0, 7);
@@ -327,13 +335,13 @@ function ceFindSameDowSwap(days, from, step, tally, exceptions) {
   for (var j = from + step; j >= 0 && j < days.length; j += step) {
     var b = days[j];
     if (b.iso.slice(0, 7) !== month) break;        // 달을 넘기면서까지 찾지는 않습니다
-    if (b.swapGroup !== 'week' || !b.preacher) continue;
+    if (b.swapGroup !== 'week' || !b[field]) continue;
     if (b.dow === a.dow) continue;                 // 같은 요일끼리 바꾸면 뜻이 없습니다
-    if (count(a.iso, a.dow, b.preacher) + 1 > CE_SAME_DOW_MAX) continue;
-    if (count(b.iso, b.dow, a.preacher) + 1 > CE_SAME_DOW_MAX) continue;
-    if (b.preacher === a.broadcast || a.preacher === b.broadcast) continue;
-    if (!ceIsAvailable(b.preacher, a.iso, CE_ROLE.SERMON, exceptions)) continue;
-    if (!ceIsAvailable(a.preacher, b.iso, CE_ROLE.SERMON, exceptions)) continue;
+    if (count(a.iso, a.dow, b[field]) + 1 > CE_SAME_DOW_MAX) continue;
+    if (count(b.iso, b.dow, a[field]) + 1 > CE_SAME_DOW_MAX) continue;
+    if (b[field] === a[other] || a[field] === b[other]) continue;
+    if (!ceIsAvailable(b[field], a.iso, role, exceptions)) continue;
+    if (!ceIsAvailable(a[field], b.iso, role, exceptions)) continue;
     return b;
   }
   return null;
@@ -498,8 +506,9 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
   ceResolveConflicts(dawnDays, ex);
   // 수요백업·토요백업은 그날 설교자·방송실과 겹쳐도 그대로 둡니다. 명단 순서가 우선입니다.
 
-  // 겹침을 푼 뒤에 같은 요일 설교 횟수를 정리합니다.
-  ceEnforceSameDowLimit(dawnDays, ex);
+  // 겹침을 푼 뒤에 같은 요일 횟수를 설교·방송실 각각 정리합니다.
+  ceEnforceSameDowLimit(dawnDays, 'preacher', CE_ROLE.SERMON, ex);
+  ceEnforceSameDowLimit(dawnDays, 'broadcast', CE_ROLE.BROADCAST, ex);
 
   var byIso = {};
   function slot(iso) {
@@ -508,7 +517,9 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
         iso: iso, preacher: '', broadcast: '', door: '', praise: '', ushers: [],
         offSermon: false, offBroadcast: false, offDoor: false, offPraise: false, offUsher: false,
         gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false, gapUsher: false,
-        swapNote: '', warning: '', dowNote: '', dowWarning: ''
+        swapNote: '', warning: '',
+        dowNoteSermon: '', dowNoteBroadcast: '',
+        dowWarnSermon: '', dowWarnBroadcast: ''
       };
     }
     return byIso[iso];
@@ -526,8 +537,10 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     cell.gapBroadcast = !!day.gapBroadcast;
     cell.swapNote = day.swapNote || '';
     cell.warning = day.warning || '';
-    cell.dowNote = day.dowNote || '';
-    cell.dowWarning = day.dowWarning || '';
+    cell.dowNoteSermon = day.dowNoteSermon || '';
+    cell.dowNoteBroadcast = day.dowNoteBroadcast || '';
+    cell.dowWarnSermon = day.dowWarnSermon || '';
+    cell.dowWarnBroadcast = day.dowWarnBroadcast || '';
   }
   for (i = 0; i < doorDays.length; i++) {
     var wd = doorDays[i];

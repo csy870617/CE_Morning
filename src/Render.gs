@@ -170,8 +170,11 @@ function ceSwapSummaryNotes(sched, grid) {
     if (d.swapNote && d.swapNote.split(' ')[0] > d.iso) {
       swapped.push(ceShortDay(d.iso));
     }
-    if (d.dowNote && d.dowNote.indexOf('세 번째라') > 0) {
-      moved.push(ceShortDay(d.iso) + '(' + CE_DOW_NAMES[d.dow] + ')');
+    var what = [];
+    if (d.dowNoteSermon && d.dowNoteSermon.indexOf('세 번째라') > 0) what.push('설교');
+    if (d.dowNoteBroadcast && d.dowNoteBroadcast.indexOf('세 번째라') > 0) what.push('방송실');
+    if (what.length) {
+      moved.push(ceShortDay(d.iso) + '(' + CE_DOW_NAMES[d.dow] + '·' + what.join('·') + ')');
     }
   }
 
@@ -180,7 +183,7 @@ function ceSwapSummaryNotes(sched, grid) {
     notes.push('설교자와 겹쳐서 방송실을 맞바꾼 날: ' + swapped.join(', '));
   }
   if (moved.length) {
-    notes.push('같은 요일 설교가 세 번째라 순서를 바꾼 날: ' + moved.join(', '));
+    notes.push('같은 요일 세 번째라 순서를 바꾼 날: ' + moved.join(', '));
   }
   if (notes.length) {
     notes.push('바뀐 칸에 메모가 붙어 있습니다. 칸 오른쪽 위 검은 삼각형에 마우스를 올리면 보입니다.');
@@ -189,14 +192,14 @@ function ceSwapSummaryNotes(sched, grid) {
 }
 
 
-/** 같은 요일 설교 횟수를 못 맞춘 경우, 왜 그런지 한 번만 덧붙입니다. */
+/** 같은 요일 횟수를 못 맞춘 경우, 왜 그런지 한 번만 덧붙입니다. */
 function ceSameDowHintNotes(sched, grid) {
   for (var iso in sched.byIso) {
     if (!Object.prototype.hasOwnProperty.call(sched.byIso, iso)) continue;
     if (iso < grid.startIso || iso > grid.endIso) continue;
-    if (sched.byIso[iso].dowWarning) {
-      return ['같은 요일 설교가 세 번 이상 남았습니다. 평일이 주 5일이라 ' +
-        '[설교] 명단 인원이 5의 약수(1·5명)면 같은 요일에 같은 사람이 되풀이됩니다. ' +
+    if (sched.byIso[iso].dowWarnSermon || sched.byIso[iso].dowWarnBroadcast) {
+      return ['같은 요일에 세 번 이상 걸리는 자리가 남았습니다. 평일이 주 5칸이라 ' +
+        '그 명단 인원이 5의 약수(1·5명)면 같은 요일에 같은 사람이 되풀이됩니다. ' +
         '명단 인원을 늘리거나 줄이면 풀립니다.'];
     }
   }
@@ -245,7 +248,8 @@ function ceCollectWarnings(grid, sched, cfg) {
       var a = sched.byIso[cell.iso];
       if (!a || cell.iso < grid.startIso) continue;
       if (a.warning) out.push(cell.iso + ' : ' + a.warning);
-      if (a.dowWarning) out.push(cell.iso + ' : ' + a.dowWarning);
+      if (a.dowWarnSermon) out.push(cell.iso + ' : ' + a.dowWarnSermon);
+      if (a.dowWarnBroadcast) out.push(cell.iso + ' : ' + a.dowWarnBroadcast);
       for (var i = 0; i < labels.length; i++) {
         if (a[labels[i].gap]) {
           out.push(cell.iso + ' : ' + labels[i].label + ' 를 채우지 못했습니다 (전원 예외)');
@@ -522,18 +526,20 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
         sh.getRange(base, col).setNote('휴일');
       }
 
-      // 설교자 줄 메모 (같은 요일 설교 두 번까지 규칙)
-      ceWriteNote(sh, base + 1, col, [info.dowNote, info.dowWarning]);
-      if (info.dowWarning) {
+      // 설교자 줄 메모 (같은 요일 두 번까지 규칙)
+      ceWriteNote(sh, base + 1, col, [info.dowNoteSermon, info.dowWarnSermon]);
+      if (info.dowWarnSermon) {
         sh.getRange(base + 1, col).setBackground(CE_COLOR.WARN_BG);
       }
 
-      // 방송실 줄 메모 (설교자와 겹쳐서 맞바꾼 자리)
+      // 방송실 줄 메모 (설교자와 겹쳐서 맞바꾼 자리 + 같은 요일 두 번까지 규칙)
       ceWriteNote(sh, base + 2, col, [
         info.swapNote ? '설교자와 겹쳐서 ' + info.swapNote : '',
-        info.warning
+        info.dowNoteBroadcast,
+        info.warning,
+        info.dowWarnBroadcast
       ]);
-      if (info.warning) {
+      if (info.warning || info.dowWarnBroadcast) {
         sh.getRange(base + 2, col).setBackground(CE_COLOR.WARN_BG);
       }
       if (info.gapSermon) ceMarkGap(sh, base + 1, col);
