@@ -48,8 +48,8 @@ for (const week of grid.weeks) {
   for (const cell of week) {
     const a = sched.byIso[cell.iso] || {};
     rows.Date.push(cell.inMonth ? cell.day : `(${cell.day})`);
-    rows['설교자'].push((a.preacher || '-') + (a.mondayNote ? '#' : ''));
-    rows['방송실'].push((a.broadcast || '-') + (a.swapNote ? '*' : '') + (a.mondayNote ? '#' : ''));
+    rows['설교자'].push(a.preacher || '-');
+    rows['방송실'].push((a.broadcast || '-') + (a.swapNote ? '*' : ''));
     const isWed = cfg.doorDows.includes(cell.dow);
     const isSat = cfg.praiseDows.includes(cell.dow);
     rows['수요/토요 서브'].push(isWed ? (a.door || '') : isSat ? (a.praise || '') : '');
@@ -67,7 +67,6 @@ for (const week of grid.weeks) {
 }
 console.log('-'.repeat(90));
 console.log('\n* 설교자와 겹쳐 다음날(같은 요일 묶음) 방송실과 맞바꾼 자리');
-console.log('# 그 달 월요일에 두 번 걸려 순서를 바꾼 자리');
 console.log('휴일로 잡은 날은 휴일(설교)·휴일(백업) 명단에서 들어갑니다 (한목사 / 노집사)');
 console.log('토요일은 설교·방송을 별도 명단으로 돌립니다 (강목사·조전도사 / 임집사·강목사)');
 console.log('현관안내는 수요일이 든 주마다 세 명씩 돌아갑니다');

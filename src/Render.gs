@@ -81,7 +81,6 @@ function ceGenerateMonth(year, month) {
     warnings: ceCollectWarnings(grid, sched, cfg),
     notes: ceFallbackNotes(rot, cfg)
       .concat(ceHolidayListNotes(rot, sched, grid))
-      .concat(ceMondayHintNotes(sched, grid))
       .concat(ceUnknownNameNotes(rot, ex, grid))
       .concat(ceSwapSummaryNotes(sched, grid))
   };
@@ -162,21 +161,12 @@ function ceShortDay(iso) {
  */
 function ceSwapSummaryNotes(sched, grid) {
   var swapped = [];
-  var moved = [];
   for (var i = 0; i < sched.dawnDays.length; i++) {
     var d = sched.dawnDays[i];
     if (d.iso < grid.startIso || d.iso > grid.endIso) continue;
-
     // 맞바꾼 두 날 모두 메모가 붙으므로, 겹쳤던 쪽(앞선 날)만 셉니다.
     if (d.swapNote && d.swapNote.split(' ')[0] > d.iso) {
       swapped.push(ceShortDay(d.iso));
-    }
-    // 월요일 중복은 월요일 쪽만 셉니다 (상대는 월요일이 아닙니다).
-    if (d.dow === 1 && (d.mondayNoteSermon || d.mondayNoteBroadcast)) {
-      var what = [];
-      if (d.mondayNoteSermon) what.push('설교');
-      if (d.mondayNoteBroadcast) what.push('방송실');
-      moved.push(ceShortDay(d.iso) + '(' + what.join('·') + ')');
     }
   }
 
@@ -184,28 +174,12 @@ function ceSwapSummaryNotes(sched, grid) {
   if (swapped.length) {
     notes.push('설교자와 겹쳐서 방송실을 맞바꾼 날: ' + swapped.join(', '));
   }
-  if (moved.length) {
-    notes.push('월요일에 두 번 걸려 순서를 바꾼 날: ' + moved.join(', '));
-  }
   if (notes.length) {
     notes.push('바뀐 칸에 메모가 붙어 있습니다. 칸 오른쪽 위 검은 삼각형에 마우스를 올리면 보입니다.');
   }
   return notes;
 }
 
-/** 월요일 중복을 못 푼 경우, 왜 그런지 한 번만 덧붙입니다. */
-function ceMondayHintNotes(sched, grid) {
-  for (var iso in sched.byIso) {
-    if (!Object.prototype.hasOwnProperty.call(sched.byIso, iso)) continue;
-    if (iso < grid.startIso || iso > grid.endIso) continue;
-    if (sched.byIso[iso].mondayWarning) {
-      return ['월요일 중복이 남았습니다. 그 달 월요일 수보다 명단 인원이 적거나, ' +
-        '평일이 주 5일이라 인원이 5의 배수면 월요일마다 같은 사람이 걸립니다. ' +
-        '그 명단 인원을 늘리면 풀립니다.'];
-    }
-  }
-  return [];
-}
 
 /**
  * 달력에 적힌 이름이 명단에 없으면 알려 줍니다.
@@ -249,7 +223,6 @@ function ceCollectWarnings(grid, sched, cfg) {
       var a = sched.byIso[cell.iso];
       if (!a || cell.iso < grid.startIso) continue;
       if (a.warning) out.push(cell.iso + ' : ' + a.warning);
-      if (a.mondayWarning) out.push(cell.iso + ' : ' + a.mondayWarning);
       for (var i = 0; i < labels.length; i++) {
         if (a[labels[i].gap]) {
           out.push(cell.iso + ' : ' + labels[i].label + ' 를 채우지 못했습니다 (전원 예외)');
@@ -263,8 +236,8 @@ function ceCollectWarnings(grid, sched, cfg) {
 /** 휴일 칸: 비운 채로 표시만 해 둡니다. 그대로 손으로 적으시면 됩니다. */
 /**
  * 한 칸에 붙일 메모를 모아 한 번에 씁니다.
- * 한 칸에 사연이 둘 이상일 수 있어서(설교자 겹침 교대 + 월요일 중복 교대),
- * 따로따로 쓰면 뒤에 쓴 것이 앞의 것을 덮어 버립니다.
+ * 한 칸에 사연이 둘 이상일 수 있어서, 따로따로 쓰면
+ * 뒤에 쓴 것이 앞의 것을 덮어 버립니다.
  */
 function ceWriteNote(sh, row, col, lines) {
   var kept = [];
@@ -526,23 +499,12 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
         sh.getRange(base, col).setNote('휴일');
       }
 
-      // 설교자 줄 메모 (월요일 한 번 규칙)
-      ceWriteNote(sh, base + 1, col, [
-        info.mondayNoteSermon ? '월요일이 겹쳐서 ' + info.mondayNoteSermon : '',
-        info.mondayWarnSermon
-      ]);
-      if (info.mondayWarnSermon) {
-        sh.getRange(base + 1, col).setBackground(CE_COLOR.WARN_BG);
-      }
-
-      // 방송실 줄 메모 (설교자 겹침 교대 + 월요일 한 번 규칙)
+      // 방송실 줄 메모 (설교자와 겹쳐서 맞바꾼 자리)
       ceWriteNote(sh, base + 2, col, [
         info.swapNote ? '설교자와 겹쳐서 ' + info.swapNote : '',
-        info.mondayNoteBroadcast ? '월요일이 겹쳐서 ' + info.mondayNoteBroadcast : '',
-        info.warning,
-        info.mondayWarnBroadcast
+        info.warning
       ]);
-      if (info.warning || info.mondayWarnBroadcast) {
+      if (info.warning) {
         sh.getRange(base + 2, col).setBackground(CE_COLOR.WARN_BG);
       }
       if (info.gapSermon) ceMarkGap(sh, base + 1, col);

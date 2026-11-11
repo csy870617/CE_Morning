@@ -240,84 +240,6 @@ function ceResolveConflicts(days, exceptions) {
   return days;
 }
 
-/**
- * 월요일 담당이 한 달에 두 번 걸리면 뒤따르는 평일과 순서를 바꿉니다.
- * 설교와 방송실에 각각 따로 적용합니다. 휴일은 다른 명단이라 셈에서 뺍니다.
- */
-function ceEnforceMondayLimit(days, field, role, exceptions, label) {
-  var seen = {};
-  var what = label || (field === 'preacher' ? '설교' : '방송실');
-  /* 메모는 표의 줄마다 따로 붙여야 하므로 역할별로도 담아 둡니다.
-     mondayNote·mondayWarning 은 둘을 합친 것으로, 배정 끝 안내 문구에 씁니다. */
-  var noteKey = field === 'preacher' ? 'mondayNoteSermon' : 'mondayNoteBroadcast';
-  var warnKey = field === 'preacher' ? 'mondayWarnSermon' : 'mondayWarnBroadcast';
-
-  function addNote(day, text) {
-    day[noteKey] = text;
-    day.mondayNote = (day.mondayNote ? day.mondayNote + ' / ' : '') + what + ' ' + text;
-  }
-  for (var i = 0; i < days.length; i++) {
-    var a = days[i];
-    if (a.dow !== 1 || !a[field] || a.swapGroup === 'holiday') continue;
-
-    var month = a.iso.slice(0, 7);
-    if (!seen[month]) seen[month] = {};
-    if (!seen[month][a[field]]) {
-      seen[month][a[field]] = true;
-      continue;
-    }
-
-    // 그 달 월요일에 이미 선 사람입니다.
-    // 먼저 뒤쪽(다음 날부터)에서 상대를 찾고, 뒤쪽 사람이 모두 이미 월요일에
-    // 걸려 있으면 앞쪽(지난 주 금요일부터 거슬러)에서도 찾아 봅니다.
-    var b = ceFindMondaySwap(days, i, 1, month, seen, field, role, exceptions) ||
-            ceFindMondaySwap(days, i, -1, month, seen, field, role, exceptions);
-    if (b) {
-      var tmp = a[field];
-      a[field] = b[field];
-      b[field] = tmp;
-      addNote(a, b.iso + ' 과 순서 바꿈 (월요일 중복)');
-      addNote(b, a.iso + ' 과 순서 바꿈 (월요일 중복)');
-    }
-
-    seen[month][a[field]] = true;
-    if (!b) {
-      var text = what + ' 담당이 그 달 월요일에 두 번 걸립니다 (바꿀 상대를 찾지 못했습니다)';
-      a[warnKey] = text;
-      a.mondayWarning = (a.mondayWarning ? a.mondayWarning + ' / ' : '') + text;
-    }
-  }
-  return days;
-}
-
-/**
- * 월요일 중복을 풀어 줄 상대를 한 방향으로 찾습니다.
- *   step  1 = 다음 날부터 뒤로,  -1 = 지난 날부터 앞으로
- * 같은 달 안에서만, 월요일이 아닌 날 중에서, 같은 요일 묶음(평일·토요)끼리만 찾습니다.
- * 그 달 월요일에 이미 선 사람은 데려와도 또 중복이 되므로 건너뜁니다.
- */
-function ceFindMondaySwap(days, from, step, month, seen, field, role, exceptions) {
-  var a = days[from];
-  for (var j = from + step; j >= 0 && j < days.length; j += step) {
-    var b = days[j];
-    if (b.iso.slice(0, 7) !== month) break;       // 달을 넘기면서까지 찾지는 않습니다
-    if (b.dow === 1) continue;                    // 월요일끼리 바꾸면 뜻이 없습니다
-    if (b.swapGroup !== a.swapGroup) continue;    // 평일·토요 명단을 섞지 않습니다
-    if (!b[field] || seen[month][b[field]]) continue;
-    if (!ceMondaySwapOk(a, b, field, role, exceptions)) continue;
-    return b;
-  }
-  return null;
-}
-
-function ceMondaySwapOk(a, b, field, role, exceptions) {
-  var other = field === 'preacher' ? 'broadcast' : 'preacher';
-  if (b[field] === a[other]) return false;          // 바꾸면 그 날 설교·방송이 겹칩니다
-  if (a[field] === b[other]) return false;
-  if (!ceIsAvailable(b[field], a.iso, role, exceptions)) return false;
-  if (!ceIsAvailable(a[field], b.iso, role, exceptions)) return false;
-  return true;
-}
 
 /* ------------------------------------------------------------------ */
 /* 전체 배정                                                           */
@@ -480,10 +402,6 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
   ceResolveConflicts(dawnDays, ex);
   // 수요백업·토요백업은 그날 설교자·방송실과 겹쳐도 그대로 둡니다. 명단 순서가 우선입니다.
 
-  // 겹침을 푼 뒤에 월요일 중복을 정리합니다. 순서를 바꿀 때 겹침이 다시 생기지 않는지 봅니다.
-  ceEnforceMondayLimit(dawnDays, 'preacher', CE_ROLE.SERMON, ex, '설교');
-  ceEnforceMondayLimit(dawnDays, 'broadcast', CE_ROLE.BROADCAST, ex, '방송실');
-
   var byIso = {};
   function slot(iso) {
     if (!byIso[iso]) {
@@ -491,10 +409,7 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
         iso: iso, preacher: '', broadcast: '', door: '', praise: '', ushers: [],
         offSermon: false, offBroadcast: false, offDoor: false, offPraise: false, offUsher: false,
         gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false, gapUsher: false,
-        swapNote: '', warning: '',
-        mondayNote: '', mondayWarning: '',
-        mondayNoteSermon: '', mondayNoteBroadcast: '',
-        mondayWarnSermon: '', mondayWarnBroadcast: ''
+        swapNote: '', warning: ''
       };
     }
     return byIso[iso];
@@ -512,12 +427,6 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso) {
     cell.gapBroadcast = !!day.gapBroadcast;
     cell.swapNote = day.swapNote || '';
     cell.warning = day.warning || '';
-    cell.mondayNote = day.mondayNote || '';
-    cell.mondayWarning = day.mondayWarning || '';
-    cell.mondayNoteSermon = day.mondayNoteSermon || '';
-    cell.mondayNoteBroadcast = day.mondayNoteBroadcast || '';
-    cell.mondayWarnSermon = day.mondayWarnSermon || '';
-    cell.mondayWarnBroadcast = day.mondayWarnBroadcast || '';
   }
   for (i = 0; i < doorDays.length; i++) {
     var wd = doorDays[i];
@@ -612,8 +521,6 @@ if (typeof module !== 'undefined') {
     ceWeekStart: ceWeekStart,
     ceDayGap: ceDayGap,
     CE_SWAP_MAX_DAYS: CE_SWAP_MAX_DAYS,
-    ceEnforceMondayLimit: ceEnforceMondayLimit,
-    ceFindMondaySwap: ceFindMondaySwap,
     CE_USHER_PER_WEEK: CE_USHER_PER_WEEK,
     ceBuildSchedule: ceBuildSchedule,
     ceMonthGrid: ceMonthGrid

@@ -59,7 +59,6 @@ function prepared(rotationColumns) {
 
 /**
  * 안내가 하나도 뜨지 않을 만큼 넉넉히 채운 명단.
- * 평일이 주 5일이므로 월요일이 겹치지 않으려면 인원이 5의 배수가 아니어야 합니다.
  */
 function fullRotations() {
   return {
@@ -313,33 +312,6 @@ test('월별 표를 끝까지 그린다', () => {
 
   const special = readRow(sh, 3, 3);
   assert.deepStrictEqual(plain(special), ['', '', '수백1', '', '', '토백1']);
-});
-
-test('월요일 설교·백업은 한 달에 한 번씩만 들어간다', () => {
-  const { ctx, ss } = prepared(fullRotations());
-  ctx.ceGenerateMonth(2026, 9);
-  const sh = ss.getSheetByName('2026-09');
-
-  // 블록마다 Date 줄은 3, 7, 11, 15, 19 행. 월요일은 B열.
-  // 첫 블록 월요일은 8/31 이라 9월 월요일은 7·14·21·28 네 번입니다.
-  const sermon = {}, backup = {};
-  [7, 11, 15, 19].forEach(base => {
-    const day = String(sh.getRange(base, 2).getValue());
-    const s = String(sh.getRange(base + 1, 2).getValue());
-    const b = String(sh.getRange(base + 2, 2).getValue());
-    assert.ok(!sermon[s], day + '일 월요일 설교 ' + s + ' 가 또 걸렸다');
-    assert.ok(!backup[b], day + '일 월요일 백업 ' + b + ' 가 또 걸렸다');
-    sermon[s] = true; backup[b] = true;
-  });
-});
-
-test('월요일이 겹칠 수밖에 없으면 그대로 두고 이유를 알려 준다', () => {
-  // 평일이 주 5일이라 인원이 5의 배수면 월요일마다 같은 사람이 걸립니다.
-  const { ctx } = prepared({ '설교': ['설1', '설2', '설3', '설4', '설5'], '방송': ['방1'] });
-  const out = ctx.ceGenerateMonth(2026, 9);
-  assert.ok(out.warnings.length > 0, '겹침을 알려야 한다');
-  assert.ok(out.warnings.join(' ').indexOf('월요일') >= 0, plain(out.warnings).join(' '));
-  assert.ok(out.notes.join(' ').indexOf('명단 인원을 늘리면') >= 0, plain(out.notes).join(' '));
 });
 
 /* ---------- 휴일 명단 ---------- */
@@ -1119,7 +1091,7 @@ test('이름이 줄어들어 체크박스 줄이 짧아져도 규칙이 남지 �
 
 /* ---------- 바뀐 자리에 붙는 메모 ---------- */
 
-/** 실제로 쓰고 계신 명단 (기준일 2026-09-02). 월요일 교대가 실제로 일어납니다. */
+/** 실제로 쓰고 계신 명단 (기준일 2026-09-02). */
 function realRotations() {
   return {
     '설교': ['김진혁', '김혜성', '이광현', '백주은', '이민희', '최세영', '김진혁',
@@ -1141,75 +1113,11 @@ function preparedReal() {
   return made;
 }
 
-test('월요일이 겹쳐서 바뀐 칸에 메모가 붙는다', () => {
-  const { ctx, ss } = preparedReal();
-  ctx.ceGenerateMonth(2026, 11);
-  const sh = ss.getSheetByName('2026-11');
-
-  // 11/30 은 그 달 마지막 월요일. 설교자 줄은 블록 Date 줄(23행) 다음 줄.
-  assert.strictEqual(String(sh.getRange(23, 2).getValue()), '30');
-  const note = String(sh.notes.get('24,2') || '');
-  assert.ok(note.indexOf('월요일이 겹쳐서') === 0, '11/30 설교자 줄 메모: ' + note);
-  assert.ok(note.indexOf('2026-11-27') >= 0, note);
-
-  // 맞바꾼 상대(11/27 금요일) 쪽에도 붙는다
-  assert.ok(String(sh.notes.get('20,6') || '').indexOf('2026-11-30') >= 0,
-    '11/27 칸 메모: ' + sh.notes.get('20,6'));
-});
-
-test('방송실 메모는 방송실 줄에, 설교 메모는 설교자 줄에 붙는다', () => {
-  const { ctx, ss } = preparedReal();
-  ctx.ceGenerateMonth(2026, 11);
-  const sh = ss.getSheetByName('2026-11');
-
-  // 11/23(월) 은 방송실만 월요일 중복으로 바뀐다 (Date 줄 19행)
-  assert.strictEqual(String(sh.getRange(19, 2).getValue()), '23');
-  assert.ok(String(sh.notes.get('21,2') || '').indexOf('월요일') >= 0,
-    '방송실 줄에 붙어야 한다: ' + sh.notes.get('21,2'));
-  assert.ok(String(sh.notes.get('20,2') || '').indexOf('월요일') < 0,
-    '설교는 안 바뀐 날이라 설교자 줄에는 없어야 한다: ' + sh.notes.get('20,2'));
-
-  // 11/30(월) 은 설교만 바뀐다
-  assert.ok(String(sh.notes.get('24,2') || '').indexOf('월요일') >= 0);
-  assert.ok(String(sh.notes.get('25,2') || '').indexOf('월요일') < 0,
-    '방송실 줄에는 없어야 한다: ' + sh.notes.get('25,2'));
-});
-
-test('한 칸에 사연이 둘이면 메모가 합쳐진다', () => {
-  const { ctx, ss } = preparedReal();
-  ctx.ceGenerateMonth(2026, 11);
-  const sh = ss.getSheetByName('2026-11');
-
-  // 11/23 방송실: 설교자와 겹쳐 11/20 과 맞바뀌고, 월요일 중복으로 11/24 와 또 바뀐다
-  const lines = String(sh.notes.get('21,2') || '').split('\n');
-  assert.strictEqual(lines.length, 2, '두 줄이어야 한다: ' + lines.join(' | '));
-  assert.ok(lines[0].indexOf('설교자와 겹쳐서') === 0, lines[0]);
-  assert.ok(lines[1].indexOf('월요일이 겹쳐서') === 0, lines[1]);
-});
-
-test('못 푼 월요일 중복은 메모와 진한 빨강으로 표시한다', () => {
-  // 방송 명단이 한 명뿐이면 월요일마다 그 사람이 걸리고, 바꿀 상대가 없다
-  const { ctx, ss } = prepared({ '설교': ['설1', '설2', '설3', '설4', '설5'], '방송': ['방1'] });
-  const out = ctx.ceGenerateMonth(2026, 9);
-  const sh = ss.getSheetByName('2026-09');
-
-  // 두 번째 월요일 9/14 (Date 줄 11행) 의 방송실 줄
-  assert.strictEqual(String(sh.getRange(11, 2).getValue()), '14');
-  const note = String(sh.notes.get('13,2') || '');
-  assert.ok(note.indexOf('두 번 걸립니다') >= 0, '방송실 줄 메모: ' + note);
-  assert.strictEqual(sh.getRange(13, 2).getBackground(), '#ea9999', '진한 빨강으로 표시');
-  // 배정을 마칠 때도 알려 준다
-  assert.ok(out.warnings.join(' ').indexOf('2026-09-14') >= 0, plain(out.warnings).join(' '));
-});
-
 test('바꾼 자리가 어디인지 배정 직후에도 알려 준다', () => {
   const { ctx } = preparedReal();
   const out = ctx.ceGenerateMonth(2026, 11);
   const notes = plain(out.notes).join('\n');
 
-  assert.ok(notes.indexOf('월요일에 두 번 걸려 순서를 바꾼 날') >= 0, notes);
-  assert.ok(notes.indexOf('11/30(설교)') >= 0, notes);
-  assert.ok(notes.indexOf('11/23(방송실)') >= 0, notes);
   assert.ok(notes.indexOf('설교자와 겹쳐서 방송실을 맞바꾼 날') >= 0, notes);
   assert.ok(notes.indexOf('검은 삼각형') >= 0, '어디를 보라고 알려 준다:\n' + notes);
 
@@ -1226,27 +1134,6 @@ test('바꾼 자리가 없으면 그 줄이 나오지 않는다', () => {
   const notes = plain(out.notes).join('\n');
   assert.ok(notes.indexOf('순서를 바꾼 날') < 0, notes);
   assert.ok(notes.indexOf('검은 삼각형') < 0, notes);
-});
-
-test('휴일 메모를 월요일 메모가 덮지 않는다', () => {
-  const rots = realRotations();
-  rots['휴일(설교)'] = [];
-  rots['휴일(백업)'] = [];
-  const { ctx, ss } = prepared(rots);
-  const settings = ss.getSheetByName('설정');
-  for (let r = 1; r <= settings.getLastRow(); r++) {
-    if (String(settings._get(r, 1)).trim() === '로테이션 시작일') settings._set(r, 2, '2026-09-02');
-  }
-  ctx.ceRenderCalendar(2026, 11);
-  const cal = ss.getSheetByName('달력(예외자)');
-  const c = findDayCell(cal, 30);
-  cal._set(c.row, c.col, '휴일');
-
-  ctx.ceGenerateMonth(2026, 11);
-  const sh = ss.getSheetByName('2026-11');
-  assert.strictEqual(String(sh.getRange(23, 2).getValue()), '30');
-  assert.strictEqual(sh.notes.get('24,2'), '휴일 — 직접 입력하세요');
-  assert.strictEqual(sh.getRange(24, 2).getBackground(), '#f4cccc');
 });
 
 /* ---------- 이름 체크는 한 사람씩만 ---------- */
