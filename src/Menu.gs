@@ -95,6 +95,8 @@ function ceMenuSetup() {
     var stale = [];
     if (ceSS().getSheetByName('장기예외')) stale.push('장기예외');
     if (ceSS().getSheetByName('_기록')) stale.push('_기록');
+    // 순번을 자리 번호로 적어 두던 숨김 탭. 이제는 지난달 표의 이름을 읽어 잇습니다.
+    if (ceSS().getSheetByName('_순번저장')) stale.push('_순번저장');
     if (stale.length) {
       msg.push('');
       msg.push('※ 이제 쓰지 않는 탭이 남아 있습니다: ' + stale.join(', '));

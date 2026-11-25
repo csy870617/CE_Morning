@@ -297,9 +297,10 @@ test('월별 표를 끝까지 그린다', () => {
   assert.strictEqual(sh.getRange(1, 1).getValue(), '2026년 9월 새벽 설교자 및 백업');
   assert.deepStrictEqual(plain(sh.getRange(2, 2, 1, 6).getValues()[0]), ['월', '화', '수', '목', '금', '토']);
 
-  // 첫 주 블록: 3행 Date / 4행 설교자 / 5행 방송실 / 6행 수요·토요
+  // 첫 주 블록: 3행 Date / 4행 설교자 / 5행 방송실 / 6·7행 수요·토요 서브(한 칸에 한 명)
   assert.strictEqual(sh.getRange(3, 1).getValue(), 'Date');
   assert.strictEqual(sh.getRange(6, 1).getValue(), '수요/토요 서브');
+  assert.strictEqual(sh.getRange(8, 1).getValue(), 'Date', '다음 블록은 8행부터');
   assert.deepStrictEqual(plain(readRow(sh, 3, 0)), ['31', '1', '2', '3', '4', '5']);
 
   const preachers = readRow(sh, 3, 1);
@@ -310,9 +311,17 @@ test('월별 표를 끝까지 그린다', () => {
   assert.deepStrictEqual(plain(broadcast.slice(0, 5)), ['방1', '방2', '방3', '방4', '방5']);
   assert.strictEqual(broadcast[5], '토방1', '토요일은 토요방송 명단');
 
-  const special = readRow(sh, 3, 3);
-  assert.deepStrictEqual(plain(special), ['', '', '수백1, 수백2', '', '', '토백1, 토백2'],
-    '수요/토요 서브는 한 칸에 두 명');
+  assert.deepStrictEqual(plain(readRow(sh, 3, 3)), ['', '', '수백1', '', '', '토백1'],
+    '수요/토요 서브 첫째 줄');
+  assert.deepStrictEqual(plain(readRow(sh, 3, 4)), ['', '', '수백2', '', '', '토백2'],
+    '수요/토요 서브 둘째 줄 (한 칸에 한 사람)');
+  // 어느 칸에도 쉼표로 두 이름이 들어가지 않는다
+  for (let r = 3; r < 28; r++) {
+    for (let c = 2; c <= 9; c++) {
+      if (String(sh._get(r - 1 + 1, 1)) === 'Date' && c === 9) continue;   // I열 Date 줄은 '현관안내(수,토)' 제목
+      assert.ok(String(sh._get(r, c)).indexOf(',') < 0, r + ',' + c + ' 칸에 이름이 둘');
+    }
+  }
 });
 
 /* ---------- 휴일 명단 ---------- */
@@ -326,10 +335,10 @@ test("달력에 '휴일' 을 적으면 휴일 명단에서 순서대로 들어�
 
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
-  // 9/16 은 수요일 -> 셋째 블록(Date 줄 11행) 의 D열
-  assert.strictEqual(String(sh.getRange(11, 4).getValue()), '16');
-  assert.strictEqual(String(sh.getRange(12, 4).getValue()), '휴설1');
-  assert.strictEqual(String(sh.getRange(13, 4).getValue()), '휴백1');
+  // 9/16 은 수요일 -> 셋째 블록(Date 줄 13행) 의 D열
+  assert.strictEqual(String(sh.getRange(13, 4).getValue()), '16');
+  assert.strictEqual(String(sh.getRange(14, 4).getValue()), '휴설1');
+  assert.strictEqual(String(sh.getRange(15, 4).getValue()), '휴백1');
 });
 
 test('휴일 칸은 연한 빨강으로 칠한다', () => {
@@ -341,8 +350,8 @@ test('휴일 칸은 연한 빨강으로 칠한다', () => {
 
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
-  assert.strictEqual(sh.getRange(12, 4).getBackground(), '#f4cccc');
-  assert.strictEqual(sh.getRange(13, 4).getBackground(), '#f4cccc');
+  assert.strictEqual(sh.getRange(14, 4).getBackground(), '#f4cccc');
+  assert.strictEqual(sh.getRange(15, 4).getBackground(), '#f4cccc');
 });
 
 test('휴일 명단을 비워 두면 그 날은 빈 칸으로 남는다', () => {
@@ -357,8 +366,8 @@ test('휴일 명단을 비워 두면 그 날은 빈 칸으로 남는다', () => 
 
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
-  assert.strictEqual(String(sh.getRange(12, 4).getValue()), '');
-  assert.strictEqual(sh.notes.get('12,4'), '휴일 — 직접 입력하세요');
+  assert.strictEqual(String(sh.getRange(14, 4).getValue()), '');
+  assert.strictEqual(sh.notes.get('14,4'), '휴일 — 직접 입력하세요');
 });
 
 /* ---------- 현관안내 (I열) ---------- */
@@ -368,7 +377,7 @@ test("I열 머리글은 '현관안내(수,토)' 이고, 블록마다 수·토 �
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
   assert.strictEqual(sh.getRange(2, 9).getValue(), '현관안내(수,토)');
-  assert.deepStrictEqual([3, 7, 11, 15, 19].map(r => String(sh.getRange(r, 9).getValue())),
+  assert.deepStrictEqual([3, 8, 13, 18, 23].map(r => String(sh.getRange(r, 9).getValue())),
     ['(2,5)', '(9,12)', '(16,19)', '(23,26)', '(30,3)']);
 });
 
@@ -376,11 +385,11 @@ test('I열에는 블록마다 현관안내 두 명이 순서대로 들어간다'
   const { ctx, ss } = prepared(fullRotations());
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
-  const read = base => [1, 2, 3].map(i => String(sh.getRange(base + i, 9).getValue()));
-  // 블록이 네 줄이라 칸은 셋이지만 두 명만 세웁니다. 셋째 줄은 비워 둡니다.
-  assert.deepStrictEqual(read(3), ['안1', '안2', '']);
-  assert.deepStrictEqual(read(7), ['안3', '안4', '']);
-  assert.deepStrictEqual(read(11), ['안5', '안6', '']);
+  const read = base => [1, 2, 3, 4].map(i => String(sh.getRange(base + i, 9).getValue()));
+  // 블록이 다섯 줄이라 칸은 넷이지만 두 명만 세웁니다. 나머지는 비워 둡니다.
+  assert.deepStrictEqual(read(3), ['안1', '안2', '', '']);
+  assert.deepStrictEqual(read(8), ['안3', '안4', '', '']);
+  assert.deepStrictEqual(read(13), ['안5', '안6', '', '']);
 });
 
 test('I열 칸 색은 표와 같다', () => {
@@ -400,9 +409,9 @@ test('I열 현관안내에 그 주 수요/토요 서브 이름이 들어가지 �
   const sh = ss.getSheetByName('2026-09');
 
   // 블록마다 Date 줄은 3, 7, 11, 15, 19. 넷째 줄(수요/토요 서브)은 base+3.
-  [3, 7, 11, 15, 19].forEach(base => {
+  [3, 8, 13, 18, 23].forEach(base => {
     const special = sh.getRange(base + 3, 2, 1, 6).getValues()[0].map(v => String(v)).filter(Boolean);
-    const ushers = [1, 2, 3].map(i => String(sh.getRange(base + i, 9).getValue()));
+    const ushers = [1, 2, 3, 4].map(i => String(sh.getRange(base + i, 9).getValue()));
     special.forEach(name => {
       assert.ok(ushers.indexOf(name) < 0,
         base + '행 블록: ' + name + ' 이 수요/토요 서브와 현관안내에 함께 들어갔다');
@@ -442,9 +451,9 @@ test('마지막 주까지 다섯 블록이 다 그려진다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
-  // 5주 x 4줄, 3행부터 -> 마지막 블록의 Date 줄은 19행
-  assert.deepStrictEqual(plain(readRow(sh, 19, 0)), ['28', '29', '30', '1', '2', '3']);
-  assert.ok(String(sh.getRange(19 + 1, 2).getValue()).length > 0);
+  // 5주 x 5줄, 3행부터 -> 마지막 블록의 Date 줄은 23행
+  assert.deepStrictEqual(plain(readRow(sh, 23, 0)), ['28', '29', '30', '1', '2', '3']);
+  assert.ok(String(sh.getRange(23 + 1, 2).getValue()).length > 0);
 });
 
 test('같은 달을 두 번 그려도 결과가 같다', () => {
@@ -865,7 +874,7 @@ test('표 아래에 이름과 체크박스가 깔린다', () => {
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
 
-  const lastTableRow = 3 + 5 * 4 - 1;          // 5주 x 4줄
+  const lastTableRow = 3 + 5 * 5 - 1;          // 5주 x 5줄
   const p = pickerRows(sh, lastTableRow);
   assert.ok(String(sh.getRange(p.label, 1).getValue()).indexOf('설교는 노랑') >= 0,
     String(sh.getRange(p.label, 1).getValue()));
@@ -891,7 +900,7 @@ test('이름은 가나다 순이고 중복이 없다', () => {
   });
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
-  const p = pickerRows(sh, 3 + 5 * 4 - 1);
+  const p = pickerRows(sh, 3 + 5 * 5 - 1);
 
   const shown = [];
   for (let c = 2; c <= 7; c++) {
@@ -914,18 +923,18 @@ test('설교자 줄은 노랑, 나머지는 연한 초록 규칙이 걸린다', 
   assert.ok(yellow, '노랑 규칙이 있어야 한다');
   assert.ok(green, '연한 초록 규칙이 있어야 한다');
 
-  // 설교자 줄은 각 주 블록의 두 번째 줄: 4, 8, 12, 16, 20
-  ['B4:G4', 'B8:G8', 'B12:G12', 'B16:G16', 'B20:G20'].forEach(r => {
+  // 설교자 줄은 각 주 블록의 두 번째 줄: 4, 9, 14, 19, 24
+  ['B4:G4', 'B9:G9', 'B14:G14', 'B19:G19', 'B24:G24'].forEach(r => {
     assert.ok(yellow.ranges.indexOf(r) >= 0, r + ' 이 노랑 규칙에 없다');
   });
-  // 방송실 + 수요/토요 서브 는 그 아래 두 줄씩, 현관안내는 I열
-  ['B5:G6', 'B9:G10', 'B13:G14', 'B17:G18', 'B21:G22',
-   'I4:I6', 'I8:I10', 'I12:I14', 'I16:I18', 'I20:I22'].forEach(r => {
+  // 방송실 + 수요/토요 서브(두 줄) 는 그 아래 세 줄씩, 현관안내는 I열 네 칸
+  ['B5:G7', 'B10:G12', 'B15:G17', 'B20:G22', 'B25:G27',
+   'I4:I7', 'I9:I12', 'I14:I17', 'I19:I22', 'I24:I27'].forEach(r => {
     assert.ok(green.ranges.indexOf(r) >= 0, r + ' 이 초록 규칙에 없다');
   });
   // 설교자 줄이 초록에, 방송실 줄이 노랑에 섞여 들어가지 않는다
   assert.ok(green.ranges.indexOf('B4:G4') < 0, '설교자 줄이 초록에도 걸렸다');
-  assert.ok(yellow.ranges.indexOf('B5:G6') < 0, '방송실 줄이 노랑에도 걸렸다');
+  assert.ok(yellow.ranges.indexOf('B5:G7') < 0, '방송실 줄이 노랑에도 걸렸다');
 });
 
 test('조건식이 자리에 휘둘리지 않도록 지금 칸을 가리킨다', () => {
@@ -948,8 +957,8 @@ test('이름 칸은 설교자와 같은 노랑으로 물든다', () => {
   const rules = sh.getConditionalFormatRules();
   const yellow = rules.filter(r => r.background === '#ffe599')[0];
   const green = rules.filter(r => r.background === '#d9ead3')[0];
-  assert.ok(yellow.ranges.indexOf('B25:D25') >= 0, plain(yellow.ranges).join(','));
-  assert.ok(green.ranges.indexOf('B25:D25') < 0, '이름 칸이 초록에도 걸렸다');
+  assert.ok(yellow.ranges.indexOf('B30:D30') >= 0, plain(yellow.ranges).join(','));
+  assert.ok(green.ranges.indexOf('B30:D30') < 0, '이름 칸이 초록에도 걸렸다');
 });
 
 test('다시 만들면 규칙이 겹쳐 쌓이지 않는다', () => {
@@ -1043,8 +1052,18 @@ test('배정표에 아이디나 비밀번호가 들어가지 않는다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
   const dump = ss.getSheetByName('2026-09').getRange(1, 1, 60, 7).getValues().join(' ').toLowerCase();
-  ['churcheveryday', 'media1234'].forEach(secret => {
-    assert.ok(dump.indexOf(secret) < 0, secret + ' 이 배정표에 들어가 있다');
+  // 아이디·비밀번호 글자 자체는 저장소에 남기지 않고, 길이와 SHA-256 지문으로만 찾습니다.
+  const crypto = require('crypto');
+  const secrets = [
+    { len: 14, sha: '6a86226e18aed28207b50f8e710e2f9f0294619df08fb653b9f3bf3d7e51e97d' },
+    { len: 9, sha: 'df2eac0a1f437c8212a495d1cf5b3fd918207bac78347362afc7fa097165c1fe' }
+  ];
+  secrets.forEach((sec, n) => {
+    for (let i = 0; i + sec.len <= dump.length; i++) {
+      const piece = dump.slice(i, i + sec.len);
+      const sha = crypto.createHash('sha256').update(piece, 'utf8').digest('hex');
+      assert.ok(sha !== sec.sha, (n === 0 ? '아이디' : '비밀번호') + ' 가 배정표에 들어가 있다');
+    }
   });
 });
 
@@ -1294,7 +1313,7 @@ test('표에서도 같은 요일 설교가 두 번을 넘지 않는다', () => {
           ' 가 그 요일에 ' + count[k] + '번 (두 번까지여야 한다)');
       });
     }
-    base += 4; w++;
+    base += 5; w++;
   }
   assert.ok(Object.keys(count).length > 0, '센 칸이 없다');
 });
@@ -1308,8 +1327,8 @@ test('바꾼 칸에 메모가 붙고 배정 직후에도 알려 준다', () => {
   const pick = rows => [...sh.notes.entries()]
     .filter(([k]) => rows.indexOf(Number(k.split(',')[0])) >= 0)
     .map(([, v]) => String(v));
-  const sermonNotes = pick([4, 8, 12, 16, 20]);
-  const castNotes = pick([5, 9, 13, 17, 21]);
+  const sermonNotes = pick([4, 9, 14, 19, 24]);
+  const castNotes = pick([5, 10, 15, 20, 25]);
   assert.ok(sermonNotes.some(n => n.indexOf('설교가 세 번째라') >= 0), sermonNotes.join(' | '));
   assert.ok(castNotes.some(n => n.indexOf('방송실이 세 번째라') >= 0), castNotes.join(' | '));
   assert.ok(sermonNotes.every(n => n.indexOf('방송실') < 0),
@@ -1332,7 +1351,7 @@ test('못 풀면 진한 빨강과 함께 이유를 알려 준다', () => {
   assert.ok(out.notes.join(' ').indexOf('명단 인원을 늘리거나 줄이면') >= 0, plain(out.notes).join(' '));
   // 세 번째가 되는 칸이 진한 빨강
   let painted = 0;
-  [4, 8, 12, 16, 20].forEach(r => {
+  [4, 9, 14, 19, 24].forEach(r => {
     for (let c = 2; c <= 6; c++) if (sh.getRange(r, c).getBackground() === '#ea9999') painted++;
   });
   assert.ok(painted > 0, '못 푼 칸을 진한 빨강으로 표시해야 한다');
@@ -1365,8 +1384,8 @@ function snapshot(ss, name) {
   let base = 3;
   while (String(sh._get(base, 1)) === 'Date') {
     rows.push([2, 3, 4, 5, 6, 7].map(c =>
-      [1, 2, 3].map(k => String(sh._get(base + k, c) || '')).join('/')).join(' '));
-    base += 4;
+      [1, 2, 3, 4].map(k => String(sh._get(base + k, c) || '')).join('/')).join(' '));
+    base += 5;
   }
   return rows.join('\n');
 }
@@ -1400,7 +1419,7 @@ test('새 달은 지난달 마지막 사람 다음부터 새 명단으로 이어
     for (let c = 2; c <= 7; c++) {
       if (String(nov._get(base, c)) === '30' && base > 3) lastName = String(nov._get(base + 1, c) || '');
     }
-    base += 4;
+    base += 5;
   }
   assert.ok(lastName, '11/30 설교자를 못 찾았다');
 
@@ -1434,7 +1453,7 @@ test('지난달 마지막 사람이 명단에서 빠지면 그 다음 차례가 
     for (let c = 2; c <= 7; c++) {
       if (String(nov._get(base, c)) === '30' && base > 3) lastName = String(nov._get(base + 1, c) || '');
     }
-    base += 4;
+    base += 5;
   }
   const was = fullRotations()['설교'];
   const nextUp = was[(was.indexOf(lastName) + 1) % was.length];
@@ -1461,10 +1480,10 @@ test('앞뒤 달 칸은 그 달 시트에서 그대로 읽어 온다', () => {
     while (String(nov._get(base, 1)) === 'Date') {
       for (let c = 2; c <= 7; c++) {
         if (String(nov._get(base, c)) === '30' && base > 3) {
-          return [1, 2, 3].map(k => String(nov._get(base + k, c) || ''));
+          return [1, 2, 3, 4].map(k => String(nov._get(base + k, c) || ''));
         }
       }
-      base += 4;
+      base += 5;
     }
     return null;
   })();
@@ -1475,26 +1494,16 @@ test('앞뒤 달 칸은 그 달 시트에서 그대로 읽어 온다', () => {
   const dec = ss.getSheetByName('2026-12');
   let decAt30 = null;
   for (let c = 2; c <= 7; c++) {
-    if (String(dec._get(3, c)) === '30') decAt30 = [1, 2, 3].map(k => String(dec._get(3 + k, c) || ''));
+    if (String(dec._get(3, c)) === '30') decAt30 = [1, 2, 3, 4].map(k => String(dec._get(3 + k, c) || ''));
   }
   assert.ok(decAt30, '12월 시트 첫 블록에서 11/30 을 못 찾았다');
   assert.deepStrictEqual(decAt30, novAt30, '같은 날짜인데 두 시트가 다르다');
 });
 
-test('순번 저장 탭이 생기고 숨겨져 있다', () => {
+test('순번은 숨김 탭에 저장하지 않고 지난달 표의 이름으로 잇는다', () => {
   const { ctx, ss } = prepared(fullRotations());
   ctx.ceGenerateMonth(2026, 11);
-  const store = ss.getSheetByName('_순번저장');
-  assert.ok(store, '_순번저장 탭이 없다');
-  assert.strictEqual(store.isSheetHidden(), true);
-  assert.deepStrictEqual(plain(store.getRange(1, 1, 1, 4).getValues()[0]),
-    ['연월', '명단', '다음자리', '마지막사람']);
-  assert.ok(ss.visibleNames().indexOf('_순번저장') < 0, '숨김 탭이 보인다');
-
-  // 같은 달을 다시 만들어도 줄이 늘어나지 않는다
-  const rows = store.getLastRow();
-  ctx.ceGenerateMonth(2026, 11);
-  assert.strictEqual(store.getLastRow(), rows, '다시 만들 때마다 줄이 늘어난다');
+  assert.strictEqual(ss.getSheetByName('_순번저장'), null, '_순번저장 탭을 만들면 안 된다');
 });
 
 test('지난달을 다시 만들려고 하면 알려 준다', () => {
@@ -1527,7 +1536,7 @@ test("'빈칸' 은 휴일 명단을 쓰지 않고 칸을 비운다", () => {
           return { row: base + 1, col: c, sermon: String(sh._get(base + 1, c) || '') };
         }
       }
-      base += 4;
+      base += 5;
     }
     return null;
   };
@@ -1580,18 +1589,82 @@ test('앞뒤 달 시트가 겹치는 날짜에서 같은 이름을 쓴다', () =
     while (String(sh._get(base, 1)) === 'Date') {
       for (let c = 2; c <= 7; c++) {
         const iso = new Date(start.getTime() + (w * 7 + (c - 2)) * 86400000).toISOString().slice(0, 10);
-        const cur = [1, 2, 3].map(k => String(sh._get(base + k, c) || '')).join('|');
+        const cur = [1, 2, 3, 4].map(k => String(sh._get(base + k, c) || '')).join('|');
         if (seen[iso] && seen[iso].v !== cur) {
           assert.fail(iso + ' 가 ' + seen[iso].m + ' 시트와 ' + out.sheetName + ' 시트에서 다르다\n' +
             '  ' + seen[iso].m + ': ' + seen[iso].v + '\n  ' + out.sheetName + ': ' + cur);
         }
         seen[iso] = { m: out.sheetName, v: cur };
       }
-      base += 4; w++;
+      base += 5; w++;
     }
     m++; if (m > 12) { m = 1; y++; }
   }
   assert.ok(Object.keys(seen).length > 300, '비교한 날이 ' + Object.keys(seen).length + '일');
+});
+
+test('11월 마지막이 설교 박소영·방송 김혜성이면, 바뀐 명단으로 12/1 은 둘 다 이광현부터', () => {
+  const { ctx, ss } = preparedReal();
+  ctx.ceGenerateMonth(2026, 11);
+  const nov = ss.getSheetByName('2026-11');
+  let base = 3, last = 3;
+  while (String(nov._get(base, 1)) === 'Date') { last = base; base += 5; }
+  assert.strictEqual(String(nov._get(last, 2)), '30', '11월 마지막 블록은 11/30(월)부터');
+  nov._set(last + 1, 2, '박소영');
+  nov._set(last + 2, 2, '김혜성');
+
+  setList(ss, '설교', ['김혜성', '이광현', '백주은', '이민희', '최세영', '김혜성', '박소영', '이광현', '백주은', '이민희', '최세영']);
+  setList(ss, '방송', ['이광현', '최세영', '이민희', '백주은', '이다혜', '김혜성', '이광현', '최세영', '이민희', '백주은', '박소영', '김혜성']);
+  setList(ss, '수요백업', ['이민희', '백주은', '김혜성', '이광현']);
+  setList(ss, '토요백업', ['백주은', '김혜성', '이광현', '이민희']);
+  setList(ss, '현관안내', ['백주은', '이광현', 'Janet 박', '이민희', '박소영', '김혜성']);
+  const out = ctx.ceGenerateMonth(2026, 12);
+  const dec = ss.getSheetByName('2026-12');
+
+  // 첫 블록: 11/30(월) 1(화) 2(수) ...
+  assert.deepStrictEqual(plain(readRow(dec, 3, 0)).slice(0, 3), ['30', '1', '2']);
+  assert.strictEqual(String(dec._get(4, 2)), '박소영', '11/30 은 11월 시트 그대로');
+  assert.strictEqual(String(dec._get(5, 2)), '김혜성', '11/30 은 11월 시트 그대로');
+  assert.strictEqual(String(dec._get(4, 3)), '이광현', '12/1 설교는 박소영 다음 이광현');
+  // 방송도 김혜성 다음은 이광현이지만, 그날 설교자와 같아 12/2 와 맞바꿉니다.
+  assert.strictEqual(String(dec._get(5, 4)), '이광현', '12/2 방송실로 넘어간 이광현');
+  assert.notStrictEqual(String(dec._get(5, 3)), '이광현');
+  assert.ok(plain(out.notes).join('\n').indexOf('12/1') >= 0, '맞바꾼 날을 알려 준다');
+
+  // 12/2·12/5 현관안내는 12월 몫이라 비지 않는다 (11/30 월요일 주라도)
+  assert.strictEqual(String(dec._get(3, 9)), '(2,5)');
+  assert.ok(String(dec._get(4, 9)).length > 0, '첫 주 현관안내가 비었다');
+  assert.ok(String(dec._get(5, 9)).length > 0, '첫 주 현관안내 둘째가 비었다');
+});
+
+test('예전 네 줄짜리 지난달 시트(서브 두 명이 한 칸)도 이름으로 읽어 잇는다', () => {
+  // 같은 11월을 새 모양(다섯 줄)과 예전 모양(네 줄)으로 두고 12월 결과가 같은지 봅니다.
+  function decWith(oldLayout) {
+    const { ctx, ss } = preparedReal();
+    ctx.ceGenerateMonth(2026, 11);
+    if (oldLayout) {
+      const nov = ss.getSheetByName('2026-11');
+      const rows = [];
+      let base = 3;
+      while (String(nov._get(base, 1)) === 'Date') {
+        const r = k => [1, 2, 3, 4, 5, 6, 7, 8, 9].map(c => nov._get(base + k, c));
+        const sub = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((c, i) => {
+          const a = String(r(3)[i] || ''), b = String(r(4)[i] || '');
+          return c === 1 ? '수요/토요 서브' : c === 9 ? a : [a, b].filter(Boolean).join(', ');
+        });
+        rows.push(r(0), r(1), r(2), sub);
+        base += 5;
+      }
+      ss.deleteSheet(nov);
+      const old = ss.insertSheet('2026-11');
+      rows.forEach((row, i) => row.forEach((v, j) => old._set(3 + i, 1 + j, v)));
+    }
+    setList(ss, '설교', ['김혜성', '이광현', '백주은', '이민희', '최세영', '김혜성', '박소영', '이광현', '백주은', '이민희', '최세영']);
+    setList(ss, '수요백업', ['이민희', '백주은', '김혜성', '이광현']);
+    ctx.ceGenerateMonth(2026, 12);
+    return snapshot(ss, '2026-12');
+  }
+  assert.strictEqual(decWith(true), decWith(false));
 });
 
 test("'휴일(현관안내)' 가 달력을 오가도 역할을 잃지 않는다", () => {
@@ -1614,11 +1687,11 @@ test("'휴일(현관안내)' 가 달력을 오가도 역할을 잃지 않는다"
   while (String(sh._get(base, 1)) === 'Date') {
     for (let col = 2; col <= 7; col++) {
       if (String(sh._get(base, col)) === '18') {
-        ushers = [1, 2, 3].map(k => String(sh._get(base + k, 9) || ''));
+        ushers = [1, 2, 3, 4].map(k => String(sh._get(base + k, 9) || ''));
         sermon = String(sh._get(base + 1, col) || '');
       }
     }
-    base += 4;
+    base += 5;
   }
   assert.ok(ushers, '18일을 못 찾았다');
   assert.strictEqual(ushers.join(''), '', '현관안내가 비어야 한다');

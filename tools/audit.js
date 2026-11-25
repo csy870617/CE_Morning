@@ -58,6 +58,7 @@ function audit(label, cfg, rot, ex, y, m) {
     if (d.swapNote) {
       const p = byIso[d.swapNote.split(' ')[0]];
       if (p && p.swapGroup !== d.swapGroup) bad(tag + ' ' + d.iso + ' 교대 상대의 요일 묶음이 다르다');
+      if (d.swapNote.slice(0, 7) !== d.iso.slice(0, 7)) bad(tag + ' ' + d.iso + ' 교대가 다른 달로 넘어갔다');
     }
     const dawn = cfg.dawnDows.indexOf(R.ceParseIso(d.iso).getUTCDay()) >= 0;
     if (!dawn && (d.preacher || d.broadcast)) bad(tag + ' ' + d.iso + ' 는 새벽예배 요일이 아닌데 배정됐다');

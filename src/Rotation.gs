@@ -206,6 +206,27 @@ function cePickNext(list, ptr, iso, role, exceptions, blocked) {
 }
 
 /**
+ * 설교자=방송실 인 날(days[from])의 방송실을 맞바꿀 상대를 한 방향으로 찾습니다.
+ * 넘겨받은 날들 안에서만 찾고(배정은 한 달씩 넘겨줍니다), 2주를 넘지 않습니다.
+ * 평일끼리, 토요일끼리만 바꿉니다.
+ */
+function ceFindConflictSwap(days, from, step, exceptions) {
+  var a = days[from];
+  for (var j = from + step; j >= 0 && j < days.length; j += step) {
+    var b = days[j];
+    if (Math.abs(ceDayGap(a.iso, b.iso)) > CE_SWAP_MAX_DAYS) break;   // 2주 넘게 찾지 않습니다
+    if (!b.broadcast) continue;
+    if ((b.swapGroup || '') !== (a.swapGroup || '')) continue;
+    if (b.broadcast === a.preacher) continue;                 // 바꿔도 그날이 그대로 겹침
+    if (a.broadcast === b.preacher) continue;                 // 상대 날에 새 충돌이 생김
+    if (!ceIsAvailable(b.broadcast, a.iso, CE_ROLE.BROADCAST, exceptions)) continue;
+    if (!ceIsAvailable(a.broadcast, b.iso, CE_ROLE.BROADCAST, exceptions)) continue;
+    return b;
+  }
+  return null;
+}
+
+/**
  * 그 날짜가 든 주의 시작(월요일) 을 돌려줍니다.
  * 표가 월~토 한 묶음이라 '같은 주' 를 이 기준으로 봅니다.
  */
@@ -235,26 +256,18 @@ function ceResolveConflicts(days, exceptions) {
     if (!a.preacher || !a.broadcast) continue;
     if (a.preacher !== a.broadcast) continue;
 
+    // 뒤쪽(다음 날부터)을 먼저 보고, 막히면 앞쪽을 거슬러 봅니다.
+    // 금요일에 겹치면 토요일을 건너뛰고 다음 월요일과 바뀝니다.
+    var b = ceFindConflictSwap(days, i, 1, exceptions) ||
+            ceFindConflictSwap(days, i, -1, exceptions);
     var done = false;
-    for (var j = i + 1; j < days.length; j++) {
-      var b = days[j];
-      if (ceDayGap(a.iso, b.iso) > CE_SWAP_MAX_DAYS) break;      // 2주 넘게 찾지 않습니다
-      if (!b.broadcast) continue;
-      // 평일끼리, 토요일끼리만 맞바꿉니다.
-      // 금요일에 겹치면 토요일을 건너뛰고 다음 월요일과 바뀝니다.
-      if ((b.swapGroup || '') !== (a.swapGroup || '')) continue;
-      if (b.broadcast === a.preacher) continue;                 // 바꿔도 i 일이 그대로 겹침
-      if (a.broadcast === b.preacher) continue;                 // j 일에 새 충돌이 생김
-      if (!ceIsAvailable(b.broadcast, a.iso, CE_ROLE.BROADCAST, exceptions)) continue;
-      if (!ceIsAvailable(a.broadcast, b.iso, CE_ROLE.BROADCAST, exceptions)) continue;
-
+    if (b) {
       var tmp = a.broadcast;
       a.broadcast = b.broadcast;
       b.broadcast = tmp;
       a.swapNote = b.iso + ' 과 맞바꿈';
       b.swapNote = a.iso + ' 과 맞바꿈';
       done = true;
-      break;
     }
     if (!done) {
       a.warning = a.swapGroup === 'sat'
@@ -375,37 +388,53 @@ function ceFindSameDowSwap(days, from, step, tally, field, role, exceptions) {
 /* ------------------------------------------------------------------ */
 
 /**
- * 달이 시작할 때 저장해 둔 자리를 '지금 명단' 에 맞춰 풉니다.
+ * 지난달에 실제로 선 사람들을 보고, 지금 명단에서 어디부터 이을지 정합니다.
+ * 자리 번호가 아니라 '이름' 으로 기억합니다.
  *
- *   saved = { idx: 다음 차례 자리, last: 그 앞에 선 사람 }
+ *   served : 지난달 그 명단으로 선 사람들 (날짜 순)
+ *   반환    : 이번 달 첫 차례의 자리 (이을 근거가 없으면 -1)
  *
- * 명단이 그대로면 저장된 자리를 그대로 씁니다. 중간에서 누가 빠지거나
- * 끼어들어 자리가 밀렸으면, 마지막에 선 사람을 찾아 그 다음부터 잇습니다.
- *
- * 마지막에 선 사람이 명단에서 아예 빠졌으면 한 칸 앞에서 잇습니다.
- * 그 사람이 빠지면서 뒷사람들이 한 칸씩 당겨 왔기 때문에, 원래 다음 차례였던
- * 사람이 바로 그 자리에 올라와 있습니다.
+ * - 지금 명단에 없는 사람(빠진 사람)은 건너뛰고 봅니다. 그래서 마지막에 선
+ *   사람이 빠졌으면, 그 앞사람 다음 — 곧 원래 다음 차례였던 사람부터 잇습니다.
+ * - 마지막에 선 사람의 '다음 사람' 부터 잇습니다.
+ * - 같은 이름이 명단에 여럿이면, 그 앞에 선 사람들까지 거슬러 맞춰 보아
+ *   실제로 선 자리를 고릅니다.
  */
-function ceResolveStart(list, saved) {
-  if (!list || !list.length) return 0;
-  var n = list.length;
-  var idx = Math.max(0, Math.min(Number(saved && saved.idx) || 0, n)) % n;
-  var last = (saved && saved.last) || '';
-  if (!last) return idx;
-
-  var before = (idx - 1 + n) % n;
-  if (list[before] === last) return idx;          // 그 자리 그대로
-
-  // 같은 이름이 여럿일 수 있으니 원래 자리에서 가장 가까운 것을 씁니다
-  var best = -1;
-  var bestGap = n + 1;
-  for (var i = 0; i < n; i++) {
-    if (list[i] !== last) continue;
-    var gap = Math.abs(i - before);
-    if (gap < bestGap) { bestGap = gap; best = i; }
+function ceStartAfterServed(list, served) {
+  if (!list || !list.length || !served || !served.length) return -1;
+  var seq = [];
+  for (var i = 0; i < served.length; i++) {
+    if (list.indexOf(served[i]) >= 0) seq.push(served[i]);
   }
-  if (best >= 0) return (best + 1) % n;
-  return (idx - 1 + n) % n;                        // 명단에서 빠진 사람
+  if (!seq.length) return -1;
+
+  var n = list.length;
+  var last = seq[seq.length - 1];
+  var best = -1;
+  var bestScore = -1;
+  for (var p = 0; p < n; p++) {
+    if (list[p] !== last) continue;
+    var score = ceAlignBackward(list, p, seq);
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  return (best + 1) % n;
+}
+
+/**
+ * 명단 p 자리에서 거꾸로 걸어가며, 지난달에 선 순서(seq)와 얼마나 맞는지 셉니다.
+ * 휴가로 한두 사람 건너뛴 경우를 생각해 명단을 세 칸까지 거슬러 찾아봅니다.
+ */
+function ceAlignBackward(list, p, seq) {
+  var n = list.length;
+  var cursor = p;
+  var score = 0;
+  for (var k = seq.length - 2; k >= 0; k--) {
+    for (var g = 1; g <= 3; g++) {
+      var x = ((cursor - g) % n + n) % n;
+      if (list[x] === seq[k]) { score++; cursor = x; break; }
+    }
+  }
+  return score;
 }
 
 /**
@@ -449,9 +478,25 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
   var lastUsed = {};
   var monthStart = {};
   var seenMonth = '';
+  var monthFrom = 0;            // 지금 달이 dawnDays 어디서 시작했는지
+
+  /* 방송실 교대·같은 요일 정리는 한 달 안에서만 합니다. 그래야 각 달 표가
+     그 달 시작 순번만으로 정해지고, 다음 달 계산이 지난달 표를 흔들지 않습니다.
+     교대는 '자리 맞바꿈' 이라 순번은 그대로 이어집니다. */
+  function finishMonth() {
+    var days = dawnDays.slice(monthFrom);
+    if (!days.length) return;
+    ceResolveConflicts(days, ex);
+    // 수요백업·토요백업은 그날 설교자·방송실과 겹쳐도 그대로 둡니다. 명단 순서가 우선입니다.
+    ceEnforceSameDowLimit(days, 'preacher', CE_ROLE.SERMON, ex);
+    ceEnforceSameDowLimit(days, 'broadcast', CE_ROLE.BROADCAST, ex);
+    monthFrom = dawnDays.length;
+  }
+
   function crossMonth(iso) {
     var ym = iso.slice(0, 7);
     if (ym === seenMonth) return;
+    if (seenMonth) finishMonth();
     seenMonth = ym;
     var saved = monthPtr && monthPtr[ym];
     var k;
@@ -563,7 +608,7 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     }
 
     if (doorDows.indexOf(dow) >= 0) {
-      // 현관안내는 그 주의 수요일을 기준으로 한 번, 세 명씩 세웁니다.
+      // 현관안내는 그 주의 수요일을 기준으로 한 번, 두 명씩 세웁니다.
       // 그 주 수요백업·토요백업과 겹치면 안 되므로, 자리만 잡아 두고
       // 그 주 배정이 다 끝난 뒤에 아래에서 한꺼번에 뽑습니다.
       usherWeeks.push({
@@ -586,6 +631,8 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     }
   }
 
+  finishMonth();
+
   /* 현관안내는 수요일과 토요일 현관을 함께 맡으므로, 그 주 수요백업·토요백업으로
      이미 선 사람은 세울 수 없습니다. 토요일이 수요일보다 뒤에 오기 때문에
      그 주 배정이 다 끝난 지금 뽑습니다. 현관안내 순번은 주 단위로만 돌아가므로
@@ -604,19 +651,23 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
   for (bi = 0; bi < doorDays.length; bi++) markAll(doorDays[bi].iso, doorDays[bi].doors);
   for (bi = 0; bi < praiseDays.length; bi++) markAll(praiseDays[bi].iso, praiseDays[bi].praises);
 
+  var usherMonth = '';
   for (bi = 0; bi < usherWeeks.length; bi++) {
     var uw = usherWeeks[bi];
+    var uym = uw.iso.slice(0, 7);
+    if (uym !== usherMonth) {
+      usherMonth = uym;
+      if (monthPtr && monthPtr[uym] && monthPtr[uym].usher !== undefined) ptr.usher = monthPtr[uym].usher;
+      // 현관안내는 날짜를 다 돈 뒤에 뽑으므로, 그 달 시작 순번도 여기서 적어 둡니다.
+      if (!monthStart[uym]) monthStart[uym] = {};
+      monthStart[uym].usher = { idx: ptr.usher, last: lastUsed.usher || '' };
+    }
     uw.busy = busyInWeek[ceWeekStart(uw.iso)] || [];
     uw.ushers = uw.offUsher ? [] : takeMany('usher', uw.iso, CE_ROLE.USHER, CE_USHER_PER_WEEK, uw.busy);
     uw.gapUsher = !uw.offUsher && has('usher') && uw.ushers.length < CE_USHER_PER_WEEK;
   }
 
-  ceResolveConflicts(dawnDays, ex);
-  // 수요백업·토요백업은 그날 설교자·방송실과 겹쳐도 그대로 둡니다. 명단 순서가 우선입니다.
-
-  // 겹침을 푼 뒤에 같은 요일 횟수를 설교·방송실 각각 정리합니다.
-  ceEnforceSameDowLimit(dawnDays, 'preacher', CE_ROLE.SERMON, ex);
-  ceEnforceSameDowLimit(dawnDays, 'broadcast', CE_ROLE.BROADCAST, ex);
+  // 겹침 교대와 같은 요일 정리는 달마다 finishMonth 에서 이미 했습니다.
 
   var byIso = {};
   function slot(iso) {
@@ -761,7 +812,7 @@ if (typeof module !== 'undefined') {
     CE_USHER_PER_WEEK: CE_USHER_PER_WEEK,
     CE_SPECIAL_PER_DAY: CE_SPECIAL_PER_DAY,
     CE_NAME_JOIN: CE_NAME_JOIN,
-    ceResolveStart: ceResolveStart,
+    ceStartAfterServed: ceStartAfterServed,
     ceBuildSchedule: ceBuildSchedule,
     ceMonthGrid: ceMonthGrid
   };

@@ -43,7 +43,7 @@ console.log(`\n${year}년 ${month}월 새벽 설교자 및 백업   (기준일 $
 console.log(pad('', 18) + ['월', '화', '수', '목', '금', '토'].map(d => pad(d, 12)).join('') +
   '  |  ' + '현관안내(수,토)');
 for (const week of grid.weeks) {
-  const rows = { Date: [], 설교자: [], 방송실: [], '수요/토요 서브': [] };
+  const rows = { Date: [], 설교자: [], 방송실: [], '수요/토요 서브': [], '': [] };
   let wedIso = '', wedDay = '', satDay = '';
   for (const cell of week) {
     const a = sched.byIso[cell.iso] || {};
@@ -52,12 +52,14 @@ for (const week of grid.weeks) {
     rows['방송실'].push((a.broadcast || '-') + (a.swapNote ? '*' : ''));
     const isWed = cfg.doorDows.includes(cell.dow);
     const isSat = cfg.praiseDows.includes(cell.dow);
-    rows['수요/토요 서브'].push(isWed ? (a.door || '') : isSat ? (a.praise || '') : '');
+    const subs = isWed ? (a.doors || []) : isSat ? (a.praises || []) : [];
+    rows['수요/토요 서브'].push(subs[0] || '');
+    rows[''].push(subs[1] || '');   // 한 칸에 한 사람
     if (isWed) { wedIso = cell.iso; wedDay = cell.day; }
     if (isSat) satDay = cell.day;
   }
   const w = ushersByWeek[wedIso] || { ushers: [] };
-  const side = [`(${wedDay},${satDay})`].concat(w.ushers.length ? w.ushers : ['-', '-', '-']);
+  const side = [`(${wedDay},${satDay})`].concat(w.ushers.length ? w.ushers : ['-', '-']);
 
   console.log('-'.repeat(90));
   Object.keys(rows).forEach((label, i) => {
@@ -69,5 +71,5 @@ console.log('-'.repeat(90));
 console.log('\n* 설교자와 겹쳐 다음날(같은 요일 묶음) 방송실과 맞바꾼 자리');
 console.log('휴일로 잡은 날은 휴일(설교)·휴일(백업) 명단에서 들어갑니다 (한목사 / 노집사)');
 console.log('토요일은 설교·방송을 별도 명단으로 돌립니다 (강목사·조전도사 / 임집사·강목사)');
-console.log('현관안내는 수요일이 든 주마다 세 명씩 돌아갑니다');
+console.log('현관안내는 수요일이 든 주마다 두 명씩 돌아갑니다');
 console.log('예외: 이목사 9/7~9/12 휴가, 정집사 9/2 방송 제외, 9/16~9/17 휴일\n');

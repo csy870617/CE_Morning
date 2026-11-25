@@ -141,7 +141,7 @@ test('역할을 지정한 예외는 그 역할에만 적용된다', () => {
 test('설교자와 방송실이 겹치면 방송실을 다음날과 맞바꾼다', () => {
   // 같은 명단, 같은 순서 -> 매일 겹친다
   const rot = { sermon: ['가', '나', '다'], broadcast: ['가', '나', '다'], door: ['A'] };
-  const s = R.ceBuildSchedule(CFG, rot, [], '2026-09-05');
+  const s = R.ceBuildSchedule(Object.assign({}, CFG, { anchor: '2026-09-01' }), rot, [], '2026-09-05');
   const d = s.dawnDays;
   // 첫날은 다음날 방송실과 맞바뀐 모양이어야 한다
   assert.strictEqual(d[0].broadcast, '나');
@@ -273,14 +273,14 @@ test('기간으로 잡은 휴일 (성탄 연휴 등)', () => {
 });
 
 test('휴일인 날은 방송실 교대 상대로 쓰이지 않는다', () => {
-  // 9/1 이 휴일이라 방송실이 비어 있으므로, 8/31 의 충돌은 9/2 와 맞바꿔 푼다
+  // 9/2 가 휴일이라 방송실이 비어 있으므로, 9/1 의 충돌은 9/3 과 맞바꿔 푼다
   const rot = { sermon: ['가', '나', '다'], broadcast: ['가', '나', '다'], door: ['A'] };
-  const ex = [{ name: '휴일', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL }];
-  const s = R.ceBuildSchedule(CFG, rot, ex, '2026-09-05');
-  assert.strictEqual(s.byIso['2026-09-01'].broadcast, '');
-  assert.notStrictEqual(s.byIso['2026-08-31'].preacher, s.byIso['2026-08-31'].broadcast);
-  assert.strictEqual(s.byIso['2026-08-31'].broadcast, '나');
-  assert.strictEqual(s.byIso['2026-09-02'].broadcast, '가');
+  const ex = [{ name: '휴일', start: '2026-09-02', end: '2026-09-02', role: R.CE_ROLE.ALL }];
+  const s = R.ceBuildSchedule(Object.assign({}, CFG, { anchor: '2026-09-01' }), rot, ex, '2026-09-05');
+  assert.strictEqual(s.byIso['2026-09-02'].broadcast, '');
+  assert.notStrictEqual(s.byIso['2026-09-01'].preacher, s.byIso['2026-09-01'].broadcast);
+  assert.strictEqual(s.byIso['2026-09-01'].broadcast, '나');
+  assert.strictEqual(s.byIso['2026-09-01'].swapNote, '2026-09-03 과 맞바꿈');
 });
 
 test('휴일과 빈칸은 서로 다른 말이다', () => {
@@ -1266,22 +1266,68 @@ test('배정 전체에서 설교·방송실 모두 같은 요일 두 번을 넘�
 
 /* ---------- 달마다 순번을 이어받기 ---------- */
 
-test('저장해 둔 자리를 지금 명단에 맞춰 푼다', () => {
-  // 명단이 그대로면 저장된 자리 그대로
-  assert.strictEqual(R.ceResolveStart(['가', '나', '다'], { idx: 2, last: '나' }), 2);
-  // 앞쪽에서 한 명이 빠져 자리가 밀렸으면 마지막 사람 다음으로
-  assert.strictEqual(R.ceResolveStart(['나', '다'], { idx: 2, last: '나' }), 1);
-  // 뒤에 사람을 더해도 자리는 그대로
-  assert.strictEqual(R.ceResolveStart(['가', '나', '다', '라'], { idx: 2, last: '나' }), 2);
-  // 마지막 사람이 빠졌으면 한 칸 앞 — 뒷사람이 당겨 왔으므로 그 자리가 다음 차례다
-  // ['가','나','다','라'] 에서 '나' 가 빠지면 원래 다음이던 '다' 가 자리 1 로 온다
-  assert.strictEqual(R.ceResolveStart(['가', '다', '라'], { idx: 2, last: '나' }), 1);
-  assert.strictEqual(['가', '다', '라'][1], '다');
-  // 같은 이름이 여럿이면 원래 자리에서 가까운 쪽 다음으로
-  assert.strictEqual(R.ceResolveStart(['가', '나', '다', '나', '마'], { idx: 4, last: '나' }), 4);
-  // 명단이 비었거나 기록이 없으면 처음부터
-  assert.strictEqual(R.ceResolveStart([], { idx: 3, last: '가' }), 0);
-  assert.strictEqual(R.ceResolveStart(['가', '나'], { idx: 0, last: '' }), 0);
+test('지난달 마지막에 선 사람의 다음 사람부터 잇는다 (이름으로)', () => {
+  const list = ['가', '나', '다', '라'];
+  assert.strictEqual(list[R.ceStartAfterServed(list, ['가', '나'])], '다');
+  assert.strictEqual(list[R.ceStartAfterServed(list, ['다', '라'])], '가', '끝에서는 처음으로');
+  // 근거가 없으면 -1
+  assert.strictEqual(R.ceStartAfterServed(list, []), -1);
+  assert.strictEqual(R.ceStartAfterServed([], ['가']), -1);
+  assert.strictEqual(R.ceStartAfterServed(list, ['모르는사람']), -1);
+});
+
+test('명단이 바뀌어도 이름을 찾아 잇는다', () => {
+  // 지난달은 옛 명단 [가,나,다,라,마] 로 돌았고 '다' 가 마지막
+  const served = ['가', '나', '다'];
+  // 앞에 사람이 빠져 자리가 밀려도 '다' 다음은 '라'
+  assert.strictEqual(['나', '다', '라', '마'][R.ceStartAfterServed(['나', '다', '라', '마'], served)], '라');
+  // 앞에 사람이 새로 들어와도 '다' 다음은 '라'
+  const grown = ['새', '가', '나', '다', '라', '마'];
+  assert.strictEqual(grown[R.ceStartAfterServed(grown, served)], '라');
+});
+
+test('마지막에 선 사람이 명단에서 빠지면 원래 다음 차례가 잇는다', () => {
+  // [가,나,다,라] 로 돌다가 '다' 가 마지막이었는데 '다' 를 뺐다 → '라'
+  const now = ['가', '나', '라'];
+  assert.strictEqual(now[R.ceStartAfterServed(now, ['가', '나', '다'])], '라');
+});
+
+test('같은 이름이 여럿이면 앞에 선 사람들로 실제 자리를 가린다', () => {
+  const list = ['김혜성', '이광현', '백주은', '이민희', '최세영',
+    '김혜성', '박소영', '이광현', '백주은', '이민희', '최세영'];
+  // 최세영은 4번과 10번 두 곳. 앞에 선 사람을 거슬러 보면 갈린다
+  const a = R.ceStartAfterServed(list, ['박소영', '이광현', '백주은', '이민희', '최세영']);
+  const b = R.ceStartAfterServed(list, ['김혜성', '이광현', '백주은', '이민희', '최세영']);
+  assert.strictEqual(a, 0, '10번 최세영 다음 → 0번 김혜성');
+  assert.strictEqual(b, 5, '4번 최세영 다음 → 5번 김혜성');
+  assert.strictEqual(list[a + 1], '이광현');
+  assert.strictEqual(list[b + 1], '박소영', '같은 김혜성이라도 그 다음이 다르다');
+});
+
+test('휴가로 한두 사람 건너뛰어도 자리를 찾는다', () => {
+  const list = ['김혜성', '이광현', '백주은', '이민희', '최세영',
+    '김혜성', '박소영', '이광현', '백주은', '이민희', '최세영'];
+  // 박소영 다음 이광현이 휴가라 건너뛰고 백주은·이민희·최세영이 섰다
+  const at = R.ceStartAfterServed(list, ['김혜성', '박소영', '백주은', '이민희', '최세영']);
+  assert.strictEqual(at, 0, '10번 최세영으로 알아본다');
+});
+
+test('11월 마지막 설교 박소영·방송 김혜성이면 12월은 둘 다 이광현부터', () => {
+  // 바뀐 명단
+  const sermon = ['김혜성', '이광현', '백주은', '이민희', '최세영',
+    '김혜성', '박소영', '이광현', '백주은', '이민희', '최세영'];
+  const broadcast = ['이광현', '최세영', '이민희', '백주은', '이다혜', '김혜성',
+    '이광현', '최세영', '이민희', '백주은', '박소영', '김혜성'];
+  // 11월은 옛 명단으로 돌았습니다 (김진혁이 있던 때)
+  const novSermon = ['김진혁', '김혜성', '이광현', '백주은', '이민희', '최세영', '김진혁', '김혜성', '박소영'];
+  const novCast = ['이다혜', '김혜성', '김진혁', '이광현', '최세영', '이민희', '백주은', '박소영', '김혜성'];
+  const s = R.ceStartAfterServed(sermon, novSermon);
+  const b = R.ceStartAfterServed(broadcast, novCast);
+  assert.strictEqual(sermon[s], '이광현');
+  assert.strictEqual(broadcast[b], '이광현');
+  // 그 다음도 명단 순서 그대로
+  assert.deepStrictEqual([1, 2, 3].map(k => sermon[(s + k) % sermon.length]), ['백주은', '이민희', '최세영']);
+  assert.deepStrictEqual([1, 2, 3].map(k => broadcast[(b + k) % broadcast.length]), ['최세영', '이민희', '백주은']);
 });
 
 test('달이 시작할 때의 자리를 달마다 적어 둔다', () => {
@@ -1318,6 +1364,40 @@ test('적어 둔 자리가 없는 달은 그냥 이어서 돈다', () => {
   const b = R.ceBuildSchedule(cfg, rot, [], end, {});
   assert.deepStrictEqual(Object.keys(b.byIso).map(k => b.byIso[k].preacher),
     Object.keys(a.byIso).map(k => a.byIso[k].preacher));
+});
+
+
+test('방송실 교대는 달을 넘어가지 않는다 -> 달 마지막 평일 겹침은 그 달 앞쪽과 바꾼다', () => {
+  // 10/30(금)이 10월 마지막 평일. 그날만 설교자=방송실이 되게 맞춘 구성
+  const cfg = { anchor: '2026-10-26', dawnDows: [1, 2, 3, 4, 5], doorDows: [] };
+  const rot = { sermon: ['가', '나', '다', '라', '마'], broadcast: ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', '마'] };
+  const s = R.ceBuildSchedule(cfg, rot, [], '2026-11-06');
+  const oct30 = s.byIso['2026-10-30'];
+  assert.notStrictEqual(oct30.preacher, oct30.broadcast);
+  assert.strictEqual(oct30.swapNote, '2026-10-29 과 맞바꿈');
+  assert.strictEqual(s.byIso['2026-10-29'].broadcast, '마');
+  // 11월은 순번 그대로 이어진다 (교대는 자리 맞바꿈일 뿐)
+  assert.strictEqual(s.byIso['2026-11-02'].broadcast, 'ㄱ');
+  assert.strictEqual(s.byIso['2026-11-02'].swapNote, '');
+});
+
+test('뒤로도 맞바꿀 수 있다 (앞쪽은 막혔을 때)', () => {
+  const days = [
+    { iso: '2026-09-01', preacher: '가', broadcast: 'ㄱ' },
+    { iso: '2026-09-02', preacher: '나', broadcast: '나' }
+  ];
+  R.ceResolveConflicts(days, []);
+  assert.strictEqual(days[1].broadcast, 'ㄱ');
+  assert.strictEqual(days[0].broadcast, '나');
+});
+
+test('현관안내도 시트에서 읽은 그 달 시작 순번을 쓴다', () => {
+  const cfg = { anchor: '2026-09-28', dawnDows: [1, 2, 3, 4, 5, 6], doorDows: [3], praiseDows: [6], usherDows: [3, 6] };
+  const rot = { sermon: ['가'], broadcast: ['나'], door: [], praise: [], usher: ['A', 'B', 'C', 'D', 'E'] };
+  const s = R.ceBuildSchedule(cfg, rot, [], '2026-11-30', { '2026-11': { usher: 3 } });
+  const novWeek = s.usherWeeks.find(w => w.iso.slice(0, 7) === '2026-11');
+  assert.deepStrictEqual(novWeek.ushers, ['D', 'E']);
+  assert.strictEqual(s.monthStart['2026-11'].usher.idx, 3);
 });
 
 console.log('\n' + passed + ' passed');
