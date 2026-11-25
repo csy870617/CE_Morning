@@ -23,7 +23,13 @@ var CE_ROLE = {
 };
 
 /** 주마다 세우는 현관안내 인원 */
-var CE_USHER_PER_WEEK = 3;
+var CE_USHER_PER_WEEK = 2;
+
+/* 표 넷째 줄 [수요/토요 서브] 에 한 칸마다 몇 명을 세울지 */
+var CE_SPECIAL_PER_DAY = 2;
+
+/* 한 칸에 여러 이름을 적을 때 쓰는 구분자 */
+var CE_NAME_JOIN = ', ';
 
 /**
  * 달력에 이 말을 적으면 그날은 배정에서 통째로 빠집니다.
@@ -485,13 +491,14 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
    * busy 에 든 사람(그 주 수요백업·토요백업)과 이미 뽑은 사람은 건너뜁니다.
    * 건너뛴 사람의 차례는 소모되지 않아 다음 주에 그대로 돌아옵니다.
    */
-  function takeUshers(iso, count, busy) {
+  function takeMany(key, iso, role, count, busy) {
     var out = [];
     var blocked = (busy || []).slice();
     for (var t = 0; t < count; t++) {
-      var picked = cePickNext(rot.usher, ptr.usher, iso, CE_ROLE.USHER, ex, blocked);
+      var picked = cePickNext(rot[key] || [], ptr[key], iso, role, ex, blocked);
       if (!picked.name) break;
-      ptr.usher = picked.ptr;
+      ptr[key] = picked.ptr;
+      if (picked.name) lastUsed[key] = picked.name;
       out.push(picked.name);
       blocked.push(picked.name);
     }
@@ -550,10 +557,12 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     if (doorDows.indexOf(dow) >= 0) {
       var blankDoor = ceIsBlank(iso, CE_ROLE.DOOR, ex);
       var offDoor = blankDoor || ceIsHoliday(iso, CE_ROLE.DOOR, ex);
-      var doorName = offDoor ? '' : take('door', iso, CE_ROLE.DOOR);
+      var doorNames = offDoor ? [] : takeMany('door', iso, CE_ROLE.DOOR, CE_SPECIAL_PER_DAY);
       doorDays.push({
-        iso: iso, dow: dow, door: doorName, offDoor: offDoor, blankDoor: blankDoor,
-        gapDoor: !offDoor && !doorName && has('door')
+        iso: iso, dow: dow,
+        doors: doorNames, door: doorNames.join(CE_NAME_JOIN),
+        offDoor: offDoor, blankDoor: blankDoor,
+        gapDoor: !offDoor && has('door') && doorNames.length < CE_SPECIAL_PER_DAY
       });
     }
 
@@ -571,10 +580,12 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     if (praiseDows.indexOf(dow) >= 0) {
       var blankPraise = ceIsBlank(iso, CE_ROLE.PRAISE, ex);
       var offPraise = blankPraise || ceIsHoliday(iso, CE_ROLE.PRAISE, ex);
-      var praiseName = offPraise ? '' : take('praise', iso, CE_ROLE.PRAISE);
+      var praiseNames = offPraise ? [] : takeMany('praise', iso, CE_ROLE.PRAISE, CE_SPECIAL_PER_DAY);
       praiseDays.push({
-        iso: iso, dow: dow, praise: praiseName, offPraise: offPraise, blankPraise: blankPraise,
-        gapPraise: !offPraise && !praiseName && has('praise')
+        iso: iso, dow: dow,
+        praises: praiseNames, praise: praiseNames.join(CE_NAME_JOIN),
+        offPraise: offPraise, blankPraise: blankPraise,
+        gapPraise: !offPraise && has('praise') && praiseNames.length < CE_SPECIAL_PER_DAY
       });
     }
   }
@@ -591,13 +602,16 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     if (busyInWeek[wk].indexOf(name) < 0) busyInWeek[wk].push(name);
   }
   var bi;
-  for (bi = 0; bi < doorDays.length; bi++) markBusy(doorDays[bi].iso, doorDays[bi].door);
-  for (bi = 0; bi < praiseDays.length; bi++) markBusy(praiseDays[bi].iso, praiseDays[bi].praise);
+  function markAll(iso2, names) {
+    for (var q = 0; q < names.length; q++) markBusy(iso2, names[q]);
+  }
+  for (bi = 0; bi < doorDays.length; bi++) markAll(doorDays[bi].iso, doorDays[bi].doors);
+  for (bi = 0; bi < praiseDays.length; bi++) markAll(praiseDays[bi].iso, praiseDays[bi].praises);
 
   for (bi = 0; bi < usherWeeks.length; bi++) {
     var uw = usherWeeks[bi];
     uw.busy = busyInWeek[ceWeekStart(uw.iso)] || [];
-    uw.ushers = uw.offUsher ? [] : takeUshers(uw.iso, CE_USHER_PER_WEEK, uw.busy);
+    uw.ushers = uw.offUsher ? [] : takeMany('usher', uw.iso, CE_ROLE.USHER, CE_USHER_PER_WEEK, uw.busy);
     uw.gapUsher = !uw.offUsher && has('usher') && uw.ushers.length < CE_USHER_PER_WEEK;
   }
 
@@ -612,7 +626,8 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
   function slot(iso) {
     if (!byIso[iso]) {
       byIso[iso] = {
-        iso: iso, preacher: '', broadcast: '', door: '', praise: '', ushers: [],
+        iso: iso, preacher: '', broadcast: '', door: '', praise: '',
+        doors: [], praises: [], ushers: [],
         offSermon: false, offBroadcast: false, offDoor: false, offPraise: false, offUsher: false,
         blankSermon: false, blankBroadcast: false, blankDoor: false, blankPraise: false,
         gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false, gapUsher: false,
@@ -647,6 +662,7 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     var wd = doorDays[i];
     var dc = slot(wd.iso);
     dc.door = wd.door;
+    dc.doors = wd.doors;
     dc.offDoor = !!wd.offDoor;
     dc.blankDoor = !!wd.blankDoor;
     dc.gapDoor = !!wd.gapDoor;
@@ -655,6 +671,7 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     var pd = praiseDays[i];
     var pc = slot(pd.iso);
     pc.praise = pd.praise;
+    pc.praises = pd.praises;
     pc.offPraise = !!pd.offPraise;
     pc.blankPraise = !!pd.blankPraise;
     pc.gapPraise = !!pd.gapPraise;
@@ -746,6 +763,8 @@ if (typeof module !== 'undefined') {
     ceDayGap: ceDayGap,
     CE_SWAP_MAX_DAYS: CE_SWAP_MAX_DAYS,
     CE_USHER_PER_WEEK: CE_USHER_PER_WEEK,
+    CE_SPECIAL_PER_DAY: CE_SPECIAL_PER_DAY,
+    CE_NAME_JOIN: CE_NAME_JOIN,
     ceResolveStart: ceResolveStart,
     ceBuildSchedule: ceBuildSchedule,
     ceMonthGrid: ceMonthGrid
@@ -1522,7 +1541,10 @@ var CE_OUT = {
 };
 
 var CE_USHER_HEADER = '현관안내(수,토)';
-var CE_USHER_GAP_NOTE = '현관안내를 세 명 다 채우지 못했습니다. ' +
+/* 표 한 블록이 네 줄이라, 현관안내 칸도 머리글 아래 세 줄이 비어 있습니다.
+   그중 앞에서부터 CE_USHER_PER_WEEK 명만 채웁니다. */
+var CE_USHER_SLOT_ROWS = 3;
+var CE_USHER_GAP_NOTE = '현관안내를 두 명 다 채우지 못했습니다. ' +
   '그 주 수요백업·토요백업으로 선 사람과 그 주 예외자는 세우지 않습니다.';
 
 var CE_ROW_LABELS = ['Date', '설교자', '방송실', '수요/토요 서브'];
@@ -1536,14 +1558,16 @@ function ceSpecialSlot(dow, info, cfg) {
   var doorDows = cfg.doorDows && cfg.doorDows.length ? cfg.doorDows : [3];
   var praiseDows = cfg.praiseDows && cfg.praiseDows.length ? cfg.praiseDows : [6];
   if (doorDows.indexOf(dow) >= 0) {
-    return { name: info.door || '', off: !!info.offDoor, blank: !!info.blankDoor,
+    return { name: info.door || '', names: info.doors || [],
+      off: !!info.offDoor, blank: !!info.blankDoor,
       gap: !!info.gapDoor, label: '수요백업' };
   }
   if (praiseDows.indexOf(dow) >= 0) {
-    return { name: info.praise || '', off: !!info.offPraise, blank: !!info.blankPraise,
+    return { name: info.praise || '', names: info.praises || [],
+      off: !!info.offPraise, blank: !!info.blankPraise,
       gap: !!info.gapPraise, label: '토요백업' };
   }
-  return { name: '', off: false, blank: false, gap: false, label: '' };
+  return { name: '', names: [], off: false, blank: false, gap: false, label: '' };
 }
 
 function ceMonthSheetName(year, month) {
@@ -1907,7 +1931,7 @@ function ceWriteUsherBlock(sh, base, week, sched, cfg, borrowed) {
   // 그 주 수요일이 이웃 달에 들어 있으면, 현관안내도 그 달 시트에서 읽어 씁니다.
   if (borrowed) {
     sh.getRange(base, CE_OUT.USHER_COL).setValue(borrowed[0]);
-    for (var b = 1; b <= CE_USHER_PER_WEEK; b++) {
+    for (var b = 1; b <= CE_USHER_SLOT_ROWS; b++) {
       sh.getRange(base + b, CE_OUT.USHER_COL).setValue(borrowed[b] || '')
         .setHorizontalAlignment('center')
         .setBackground(b === 1 ? CE_COLOR.BAND_BG : null);
@@ -1917,13 +1941,14 @@ function ceWriteUsherBlock(sh, base, week, sched, cfg, borrowed) {
 
   var info = (wed && sched.byIso[wed.iso]) || {};
   var names = info.ushers || [];
-  for (var k = 0; k < CE_USHER_PER_WEEK; k++) {
+  for (var k = 0; k < CE_USHER_SLOT_ROWS; k++) {
     var cellRange = sh.getRange(base + 1 + k, CE_OUT.USHER_COL);
-    cellRange.setValue(names[k] || '').setHorizontalAlignment('center');
+    cellRange.setValue((k < CE_USHER_PER_WEEK && names[k]) ? names[k] : '')
+      .setHorizontalAlignment('center');
     // 왼쪽 표의 같은 줄과 같은 바탕색
     cellRange.setBackground(k === 0 ? CE_COLOR.BAND_BG : null);
     // 못 채운 자리를 표시합니다. 채운 자리는 멀쩡하므로 빈 자리만 칠합니다.
-    if (info.gapUsher && !names[k]) {
+    if (info.gapUsher && k < CE_USHER_PER_WEEK && !names[k]) {
       cellRange.setBackground(CE_COLOR.WARN_BG).setNote(CE_USHER_GAP_NOTE);
     }
   }
@@ -2020,7 +2045,7 @@ function ceApplyHighlightRule(sh, pairs, weekCount) {
     var base = CE_OUT.FIRST_BLOCK_ROW + w * 4;
     sermonRanges.push(sh.getRange(base + 1, CE_OUT.FIRST_COL, 1, CE_OUT.COLS));
     otherRanges.push(sh.getRange(base + 2, CE_OUT.FIRST_COL, 2, CE_OUT.COLS));
-    otherRanges.push(sh.getRange(base + 1, CE_OUT.USHER_COL, CE_USHER_PER_WEEK, 1));
+    otherRanges.push(sh.getRange(base + 1, CE_OUT.USHER_COL, CE_USHER_SLOT_ROWS, 1));
   }
   // 체크한 이름 칸도 함께 물듭니다. 설교자와 같은 색으로 둡니다.
   for (var i = 0; i < pairs.length; i++) {
@@ -2189,7 +2214,8 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
     .setFontSize(9).setFontColor('#666666');
 
   sh.setColumnWidth(1, 105);        // 줄 이름이 접히지 않을 만큼
-  for (var col2 = CE_OUT.FIRST_COL; col2 <= totalCols; col2++) sh.setColumnWidth(col2, 100);
+  // 넷째 줄에 두 명이 '이름, 이름' 으로 들어가므로 100 보다 조금 넓게 잡습니다.
+  for (var col2 = CE_OUT.FIRST_COL; col2 <= totalCols; col2++) sh.setColumnWidth(col2, 125);
   sh.setColumnWidth(totalCols + 1, 24);                 // H열 - 표와 떼어 놓는 빈 열
   sh.setColumnWidth(CE_OUT.USHER_COL, 110);
   // 열 고정은 쓰지 않습니다. 제목 줄과 맨 아래 설명 줄이 A~G로 병합되어 있어서

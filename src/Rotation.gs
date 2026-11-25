@@ -19,7 +19,13 @@ var CE_ROLE = {
 };
 
 /** 주마다 세우는 현관안내 인원 */
-var CE_USHER_PER_WEEK = 3;
+var CE_USHER_PER_WEEK = 2;
+
+/* 표 넷째 줄 [수요/토요 서브] 에 한 칸마다 몇 명을 세울지 */
+var CE_SPECIAL_PER_DAY = 2;
+
+/* 한 칸에 여러 이름을 적을 때 쓰는 구분자 */
+var CE_NAME_JOIN = ', ';
 
 /**
  * 달력에 이 말을 적으면 그날은 배정에서 통째로 빠집니다.
@@ -481,13 +487,14 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
    * busy 에 든 사람(그 주 수요백업·토요백업)과 이미 뽑은 사람은 건너뜁니다.
    * 건너뛴 사람의 차례는 소모되지 않아 다음 주에 그대로 돌아옵니다.
    */
-  function takeUshers(iso, count, busy) {
+  function takeMany(key, iso, role, count, busy) {
     var out = [];
     var blocked = (busy || []).slice();
     for (var t = 0; t < count; t++) {
-      var picked = cePickNext(rot.usher, ptr.usher, iso, CE_ROLE.USHER, ex, blocked);
+      var picked = cePickNext(rot[key] || [], ptr[key], iso, role, ex, blocked);
       if (!picked.name) break;
-      ptr.usher = picked.ptr;
+      ptr[key] = picked.ptr;
+      if (picked.name) lastUsed[key] = picked.name;
       out.push(picked.name);
       blocked.push(picked.name);
     }
@@ -546,10 +553,12 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     if (doorDows.indexOf(dow) >= 0) {
       var blankDoor = ceIsBlank(iso, CE_ROLE.DOOR, ex);
       var offDoor = blankDoor || ceIsHoliday(iso, CE_ROLE.DOOR, ex);
-      var doorName = offDoor ? '' : take('door', iso, CE_ROLE.DOOR);
+      var doorNames = offDoor ? [] : takeMany('door', iso, CE_ROLE.DOOR, CE_SPECIAL_PER_DAY);
       doorDays.push({
-        iso: iso, dow: dow, door: doorName, offDoor: offDoor, blankDoor: blankDoor,
-        gapDoor: !offDoor && !doorName && has('door')
+        iso: iso, dow: dow,
+        doors: doorNames, door: doorNames.join(CE_NAME_JOIN),
+        offDoor: offDoor, blankDoor: blankDoor,
+        gapDoor: !offDoor && has('door') && doorNames.length < CE_SPECIAL_PER_DAY
       });
     }
 
@@ -567,10 +576,12 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     if (praiseDows.indexOf(dow) >= 0) {
       var blankPraise = ceIsBlank(iso, CE_ROLE.PRAISE, ex);
       var offPraise = blankPraise || ceIsHoliday(iso, CE_ROLE.PRAISE, ex);
-      var praiseName = offPraise ? '' : take('praise', iso, CE_ROLE.PRAISE);
+      var praiseNames = offPraise ? [] : takeMany('praise', iso, CE_ROLE.PRAISE, CE_SPECIAL_PER_DAY);
       praiseDays.push({
-        iso: iso, dow: dow, praise: praiseName, offPraise: offPraise, blankPraise: blankPraise,
-        gapPraise: !offPraise && !praiseName && has('praise')
+        iso: iso, dow: dow,
+        praises: praiseNames, praise: praiseNames.join(CE_NAME_JOIN),
+        offPraise: offPraise, blankPraise: blankPraise,
+        gapPraise: !offPraise && has('praise') && praiseNames.length < CE_SPECIAL_PER_DAY
       });
     }
   }
@@ -587,13 +598,16 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     if (busyInWeek[wk].indexOf(name) < 0) busyInWeek[wk].push(name);
   }
   var bi;
-  for (bi = 0; bi < doorDays.length; bi++) markBusy(doorDays[bi].iso, doorDays[bi].door);
-  for (bi = 0; bi < praiseDays.length; bi++) markBusy(praiseDays[bi].iso, praiseDays[bi].praise);
+  function markAll(iso2, names) {
+    for (var q = 0; q < names.length; q++) markBusy(iso2, names[q]);
+  }
+  for (bi = 0; bi < doorDays.length; bi++) markAll(doorDays[bi].iso, doorDays[bi].doors);
+  for (bi = 0; bi < praiseDays.length; bi++) markAll(praiseDays[bi].iso, praiseDays[bi].praises);
 
   for (bi = 0; bi < usherWeeks.length; bi++) {
     var uw = usherWeeks[bi];
     uw.busy = busyInWeek[ceWeekStart(uw.iso)] || [];
-    uw.ushers = uw.offUsher ? [] : takeUshers(uw.iso, CE_USHER_PER_WEEK, uw.busy);
+    uw.ushers = uw.offUsher ? [] : takeMany('usher', uw.iso, CE_ROLE.USHER, CE_USHER_PER_WEEK, uw.busy);
     uw.gapUsher = !uw.offUsher && has('usher') && uw.ushers.length < CE_USHER_PER_WEEK;
   }
 
@@ -608,7 +622,8 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
   function slot(iso) {
     if (!byIso[iso]) {
       byIso[iso] = {
-        iso: iso, preacher: '', broadcast: '', door: '', praise: '', ushers: [],
+        iso: iso, preacher: '', broadcast: '', door: '', praise: '',
+        doors: [], praises: [], ushers: [],
         offSermon: false, offBroadcast: false, offDoor: false, offPraise: false, offUsher: false,
         blankSermon: false, blankBroadcast: false, blankDoor: false, blankPraise: false,
         gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false, gapUsher: false,
@@ -643,6 +658,7 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     var wd = doorDays[i];
     var dc = slot(wd.iso);
     dc.door = wd.door;
+    dc.doors = wd.doors;
     dc.offDoor = !!wd.offDoor;
     dc.blankDoor = !!wd.blankDoor;
     dc.gapDoor = !!wd.gapDoor;
@@ -651,6 +667,7 @@ function ceBuildSchedule(cfg, rotations, exceptions, endIso, monthPtr) {
     var pd = praiseDays[i];
     var pc = slot(pd.iso);
     pc.praise = pd.praise;
+    pc.praises = pd.praises;
     pc.offPraise = !!pd.offPraise;
     pc.blankPraise = !!pd.blankPraise;
     pc.gapPraise = !!pd.gapPraise;
@@ -742,6 +759,8 @@ if (typeof module !== 'undefined') {
     ceDayGap: ceDayGap,
     CE_SWAP_MAX_DAYS: CE_SWAP_MAX_DAYS,
     CE_USHER_PER_WEEK: CE_USHER_PER_WEEK,
+    CE_SPECIAL_PER_DAY: CE_SPECIAL_PER_DAY,
+    CE_NAME_JOIN: CE_NAME_JOIN,
     ceResolveStart: ceResolveStart,
     ceBuildSchedule: ceBuildSchedule,
     ceMonthGrid: ceMonthGrid

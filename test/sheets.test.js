@@ -311,7 +311,8 @@ test('월별 표를 끝까지 그린다', () => {
   assert.strictEqual(broadcast[5], '토방1', '토요일은 토요방송 명단');
 
   const special = readRow(sh, 3, 3);
-  assert.deepStrictEqual(plain(special), ['', '', '수백1', '', '', '토백1']);
+  assert.deepStrictEqual(plain(special), ['', '', '수백1, 수백2', '', '', '토백1, 토백2'],
+    '수요/토요 서브는 한 칸에 두 명');
 });
 
 /* ---------- 휴일 명단 ---------- */
@@ -371,14 +372,15 @@ test("I열 머리글은 '현관안내(수,토)' 이고, 블록마다 수·토 �
     ['(2,5)', '(9,12)', '(16,19)', '(23,26)', '(30,3)']);
 });
 
-test('I열에는 블록마다 현관안내 세 명이 순서대로 들어간다', () => {
+test('I열에는 블록마다 현관안내 두 명이 순서대로 들어간다', () => {
   const { ctx, ss } = prepared(fullRotations());
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
   const read = base => [1, 2, 3].map(i => String(sh.getRange(base + i, 9).getValue()));
-  assert.deepStrictEqual(read(3), ['안1', '안2', '안3']);
-  assert.deepStrictEqual(read(7), ['안4', '안5', '안6']);
-  assert.deepStrictEqual(read(11), ['안7', '안1', '안2']);
+  // 블록이 네 줄이라 칸은 셋이지만 두 명만 세웁니다. 셋째 줄은 비워 둡니다.
+  assert.deepStrictEqual(read(3), ['안1', '안2', '']);
+  assert.deepStrictEqual(read(7), ['안3', '안4', '']);
+  assert.deepStrictEqual(read(11), ['안5', '안6', '']);
 });
 
 test('I열 칸 색은 표와 같다', () => {
@@ -408,7 +410,7 @@ test('I열 현관안내에 그 주 수요/토요 서브 이름이 들어가지 �
   });
 });
 
-test('겹침을 빼서 세 명을 못 채우면 그 칸에 이유를 적는다', () => {
+test('겹침을 빼서 두 명을 못 채우면 그 칸에 이유를 적는다', () => {
   const rots = fullRotations();
   rots['수요백업'] = ['안1'];
   rots['토요백업'] = ['안2'];
@@ -420,7 +422,7 @@ test('겹침을 빼서 세 명을 못 채우면 그 칸에 이유를 적는다',
   assert.strictEqual(String(sh.getRange(4, 9).getValue()), '안3');
   assert.strictEqual(String(sh.getRange(5, 9).getValue()), '');
   const note = String(sh.notes.get('5,9') || '');
-  assert.ok(note.indexOf('세 명 다 채우지 못했습니다') >= 0, note);
+  assert.ok(note.indexOf('두 명 다 채우지 못했습니다') >= 0, note);
   assert.ok(note.indexOf('수요백업·토요백업') >= 0, '왜 못 채웠는지 적어야 한다: ' + note);
   assert.strictEqual(sh.getRange(5, 9).getBackground(), '#ea9999');
 });

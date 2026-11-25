@@ -80,8 +80,8 @@ function audit(label, cfg, rot, ex, y, m) {
   s.usherWeeks.forEach(w => {
     const wk = R.ceWeekStart(w.iso);
     const busy = [];
-    s.doorDays.forEach(d => { if (R.ceWeekStart(d.iso) === wk && d.door) busy.push(d.door); });
-    s.praiseDays.forEach(d => { if (R.ceWeekStart(d.iso) === wk && d.praise) busy.push(d.praise); });
+    s.doorDays.forEach(d => { if (R.ceWeekStart(d.iso) === wk) busy.push.apply(busy, d.doors); });
+    s.praiseDays.forEach(d => { if (R.ceWeekStart(d.iso) === wk) busy.push.apply(busy, d.praises); });
     w.ushers.forEach(n => {
       if (busy.indexOf(n) >= 0) bad(tag + ' ' + w.iso + ' 현관안내 ' + n + ' 가 그 주 백업과 겹친다');
     });
@@ -94,13 +94,14 @@ function audit(label, cfg, rot, ex, y, m) {
   ex.forEach(e => {
     if (R.ceIsHolidayName(e.name)) return;
     const pairs = [[R.CE_ROLE.SERMON, 'preacher', '설교'], [R.CE_ROLE.BROADCAST, 'broadcast', '방송'],
-      [R.CE_ROLE.DOOR, 'door', '수요백업'], [R.CE_ROLE.PRAISE, 'praise', '토요백업']];
+      [R.CE_ROLE.DOOR, 'doors', '수요백업'], [R.CE_ROLE.PRAISE, 'praises', '토요백업']];
     for (const iso in s.byIso) {
       if (iso < e.start || iso > e.end) continue;
       pairs.forEach(([role, field, name]) => {
-        if ((e.role === R.CE_ROLE.ALL || e.role === role) && s.byIso[iso][field] === e.name) {
-          bad(tag + ' ' + iso + ' 예외자 ' + e.name + ' 가 ' + name + ' 에 들어갔다');
-        }
+        if (e.role !== R.CE_ROLE.ALL && e.role !== role) return;
+        const got = s.byIso[iso][field];
+        const hit = Array.isArray(got) ? got.indexOf(e.name) >= 0 : got === e.name;
+        if (hit) bad(tag + ' ' + iso + ' 예외자 ' + e.name + ' 가 ' + name + ' 에 들어갔다');
       });
     }
   });
@@ -125,8 +126,20 @@ function audit(label, cfg, rot, ex, y, m) {
     if (d.preacher && both.indexOf(d.preacher) < 0) bad(tag + ' ' + d.iso + ' 설교자 ' + d.preacher + ' 가 명단 밖');
     if (d.broadcast && both.indexOf(d.broadcast) < 0) bad(tag + ' ' + d.iso + ' 방송실 ' + d.broadcast + ' 가 명단 밖');
   });
-  s.doorDays.forEach(d => { if (d.door && pool('door').indexOf(d.door) < 0) bad(tag + ' ' + d.iso + ' 수요백업 명단 밖'); });
-  s.praiseDays.forEach(d => { if (d.praise && pool('praise').indexOf(d.praise) < 0) bad(tag + ' ' + d.iso + ' 토요백업 명단 밖'); });
+  s.doorDays.forEach(d => d.doors.forEach(n => {
+    if (pool('door').indexOf(n) < 0) bad(tag + ' ' + d.iso + ' 수요백업 ' + n + ' 가 명단 밖');
+  }));
+  s.praiseDays.forEach(d => d.praises.forEach(n => {
+    if (pool('praise').indexOf(n) < 0) bad(tag + ' ' + d.iso + ' 토요백업 ' + n + ' 가 명단 밖');
+  }));
+  // 한 칸 안에 같은 사람이 두 번 들어가지 않는다
+  s.doorDays.concat(s.praiseDays).forEach(d => {
+    const names = d.doors || d.praises;
+    if (names.filter((v, i, a) => a.indexOf(v) === i).length !== names.length) {
+      bad(tag + ' ' + d.iso + ' 넷째 줄에 같은 사람이 두 번: ' + names.join(','));
+    }
+    if (names.length > R.CE_SPECIAL_PER_DAY) bad(tag + ' ' + d.iso + ' 넷째 줄 ' + names.length + '명');
+  });
   s.usherWeeks.forEach(w => w.ushers.forEach(n => {
     if (pool('usher').indexOf(n) < 0) bad(tag + ' ' + w.iso + ' 현관안내 ' + n + ' 가 명단 밖');
   }));
