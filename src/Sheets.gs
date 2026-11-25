@@ -6,7 +6,8 @@ var CE_TAB = {
   SETTINGS: '설정',
   ROTATION: '로테이션',
   CALENDAR: '달력(예외자)',
-  STORE: '_달력저장'
+  STORE: '_달력저장',
+  PTR_STORE: '_순번저장'
 };
 
 /** 생명의 삶(두란노 QT) 묵상 달력 주소 */
@@ -394,4 +395,92 @@ function ceWriteStoredExceptions(entries) {
 /** 예외(휴가·휴일)는 달마다 저장해 둔 것을 전부 모아 씁니다. */
 function ceReadAllExceptions() {
   return ceReadStoredExceptions();
+}
+
+
+/* ------------------------------------------------------------------ */
+/* 순번 저장소 (_순번저장 숨김 탭)                                      */
+/*                                                                     */
+/* 달이 시작할 때 각 명단이 어디까지 왔는지 적어 둡니다.                */
+/* 이걸 적어 두어야, 명단에서 누가 빠지거나 끼어들어도 이미 만들어 둔    */
+/* 지난달 표가 흔들리지 않습니다. 새 달은 '지난달 마지막 사람 다음'      */
+/* 부터 새 명단으로 이어 갑니다.                                        */
+/* ------------------------------------------------------------------ */
+
+function cePtrSheet() {
+  var sh = ceSheet(CE_TAB.PTR_STORE, true);
+  if (String(sh.getRange(1, 1).getValue()).trim() !== '연월') {
+    sh.getRange(1, 1, 1, 4).setValues([['연월', '명단', '다음자리', '마지막사람']])
+      .setFontWeight('bold');
+  }
+  sh.hideSheet();
+  return sh;
+}
+
+/** { 'YYYY-MM': { sermon: {idx, last}, ... } } */
+function ceReadStartStates() {
+  var sh = ceSheet(CE_TAB.PTR_STORE, false);
+  var out = {};
+  if (!sh) return out;
+  var last = sh.getLastRow();
+  if (last < 2) return out;
+
+  var values = sh.getRange(2, 1, last - 1, 4).getValues();
+  for (var i = 0; i < values.length; i++) {
+    var ym = String(values[i][0] == null ? '' : values[i][0]).trim();
+    var key = String(values[i][1] == null ? '' : values[i][1]).trim();
+    if (!/^\d{4}-\d{2}$/.test(ym) || !key) continue;
+    if (!out[ym]) out[ym] = {};
+    out[ym][key] = {
+      idx: Number(values[i][2]) || 0,
+      last: String(values[i][3] == null ? '' : values[i][3]).trim()
+    };
+  }
+  return out;
+}
+
+/** 아직 적어 두지 않은 달만 적습니다. 이미 적힌 달은 그대로 둡니다. */
+function ceSaveNewStartStates(monthStart) {
+  var have = ceReadStartStates();
+  var rows = [];
+  for (var ym in monthStart) {
+    if (!Object.prototype.hasOwnProperty.call(monthStart, ym)) continue;
+    if (have[ym]) continue;
+    var snap = monthStart[ym];
+    for (var key in snap) {
+      if (!Object.prototype.hasOwnProperty.call(snap, key)) continue;
+      rows.push([ym, key, snap[key].idx, snap[key].last]);
+    }
+  }
+  if (!rows.length) return [];
+
+  var sh = cePtrSheet();
+  rows.sort(function (a, b) {
+    if (a[0] !== b[0]) return a[0] < b[0] ? -1 : 1;
+    return a[1] < b[1] ? -1 : (a[1] > b[1] ? 1 : 0);
+  });
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 4).setValues(rows);
+
+  var months = [];
+  for (var r = 0; r < rows.length; r++) {
+    if (months.indexOf(rows[r][0]) < 0) months.push(rows[r][0]);
+  }
+  return months;
+}
+
+/** 저장해 둔 자리를 지금 명단에 맞춰 풉니다. */
+function ceResolveStartStates(raw, rot) {
+  var out = {};
+  for (var ym in raw) {
+    if (!Object.prototype.hasOwnProperty.call(raw, ym)) continue;
+    var snap = raw[ym];
+    var resolved = {};
+    for (var i = 0; i < CE_ROTATION_COLUMNS.length; i++) {
+      var key = CE_ROTATION_COLUMNS[i].key;
+      if (!snap[key]) continue;
+      resolved[key] = ceResolveStart(rot[key] || [], snap[key]);
+    }
+    out[ym] = resolved;
+  }
+  return out;
 }

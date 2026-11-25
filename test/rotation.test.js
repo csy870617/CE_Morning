@@ -281,12 +281,76 @@ test('휴일인 날은 방송실 교대 상대로 쓰이지 않는다', () => {
   assert.strictEqual(s.byIso['2026-09-02'].broadcast, '가');
 });
 
-test('휴일 대신 쓸 수 있는 말들', () => {
-  ['휴일', '휴무', '없음', '직접입력'].forEach(word => {
+test('휴일과 빈칸은 서로 다른 말이다', () => {
+  ['휴일', '휴무'].forEach(word => {
     assert.strictEqual(R.ceIsHolidayName(word), true, word);
+    assert.strictEqual(R.ceIsBlankName(word), false, word);
+  });
+  ['빈칸', '없음', '직접입력'].forEach(word => {
+    assert.strictEqual(R.ceIsBlankName(word), true, word);
+    assert.strictEqual(R.ceIsHolidayName(word), false, word);
   });
   assert.strictEqual(R.ceIsHolidayName('홍길동'), false);
+  assert.strictEqual(R.ceIsBlankName('홍길동'), false);
   assert.strictEqual(R.ceIsHolidayName(' 휴일 '), true);
+  assert.strictEqual(R.ceIsBlankName(' 빈칸 '), true);
+  // 둘 다 사람 이름이 아니다
+  ['휴일', '휴무', '빈칸', '없음', '직접입력'].forEach(word => {
+    assert.strictEqual(R.ceIsOffName(word), true, word);
+  });
+  assert.strictEqual(R.ceIsOffName('홍길동'), false);
+});
+
+test("'빈칸' 은 휴일 명단도 쓰지 않고 그냥 비운다", () => {
+  const cfg = { anchor: '2026-08-31', dawnDows: [1,2,3,4,5,6], satDows: [6], doorDows: [3], praiseDows: [6] };
+  const rot = {
+    sermon: ['가', '나', '다'], broadcast: ['ㄱ', 'ㄴ', 'ㄷ'],
+    holidaySermon: ['휴설1'], holidayBroadcast: ['휴백1']
+  };
+  const ex = [
+    { name: '휴일', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.ALL },
+    { name: '빈칸', start: '2026-09-02', end: '2026-09-02', role: R.CE_ROLE.ALL }
+  ];
+  const s = R.ceBuildSchedule(cfg, rot, ex, '2026-09-05');
+  // 9/1 휴일 -> 휴일 명단
+  assert.strictEqual(s.byIso['2026-09-01'].preacher, '휴설1');
+  assert.strictEqual(s.byIso['2026-09-01'].blankSermon, false);
+  // 9/2 빈칸 -> 아무도 없음
+  assert.strictEqual(s.byIso['2026-09-02'].preacher, '');
+  assert.strictEqual(s.byIso['2026-09-02'].broadcast, '');
+  assert.strictEqual(s.byIso['2026-09-02'].blankSermon, true);
+  assert.strictEqual(s.byIso['2026-09-02'].offSermon, true);
+  // 두 날 모두 평일 순번을 쓰지 않는다
+  assert.strictEqual(s.byIso['2026-08-31'].preacher, '가');
+  assert.strictEqual(s.byIso['2026-09-03'].preacher, '나');
+  assert.strictEqual(s.byIso['2026-09-04'].preacher, '다');
+});
+
+test("'빈칸(방송)' 은 방송실만 비운다", () => {
+  const cfg = { anchor: '2026-08-31', dawnDows: [1,2,3,4,5,6], satDows: [6], doorDows: [3], praiseDows: [6] };
+  const rot = { sermon: ['가', '나'], broadcast: ['ㄱ', 'ㄴ'], holidayBroadcast: ['휴백1'] };
+  const ex = [{ name: '빈칸', start: '2026-09-01', end: '2026-09-01', role: R.CE_ROLE.BROADCAST }];
+  const s = R.ceBuildSchedule(cfg, rot, ex, '2026-09-03');
+  assert.strictEqual(s.byIso['2026-09-01'].preacher, '나', '설교는 그대로');
+  assert.strictEqual(s.byIso['2026-09-01'].broadcast, '', '휴일 명단도 쓰지 않는다');
+  assert.strictEqual(s.byIso['2026-09-01'].blankBroadcast, true);
+});
+
+test("'빈칸' 은 수요백업·토요백업도 비운다", () => {
+  const cfg = { anchor: '2026-08-31', dawnDows: [1,2,3,4,5,6], satDows: [6], doorDows: [3], praiseDows: [6] };
+  const rot = { sermon: ['가'], broadcast: ['ㄱ'], door: ['A', 'B'], praise: ['C', 'D'] };
+  const ex = [
+    { name: '빈칸', start: '2026-09-02', end: '2026-09-02', role: R.CE_ROLE.ALL },
+    { name: '빈칸', start: '2026-09-05', end: '2026-09-05', role: R.CE_ROLE.ALL }
+  ];
+  const s = R.ceBuildSchedule(cfg, rot, ex, '2026-09-12');
+  assert.strictEqual(s.byIso['2026-09-02'].door, '');
+  assert.strictEqual(s.byIso['2026-09-02'].blankDoor, true);
+  assert.strictEqual(s.byIso['2026-09-05'].praise, '');
+  assert.strictEqual(s.byIso['2026-09-05'].blankPraise, true);
+  // 순번은 그대로 남아 다음 주에 첫 사람이 들어간다
+  assert.strictEqual(s.byIso['2026-09-09'].door, 'A');
+  assert.strictEqual(s.byIso['2026-09-12'].praise, 'C');
 });
 
 test('휴일 판정은 역할 범위를 지킨다', () => {
@@ -1198,6 +1262,62 @@ test('배정 전체에서 설교·방송실 모두 같은 요일 두 번을 넘�
       }
     });
   assert.ok(s.dawnDays.some(d => d.dowNoteBroadcast), '방송실 쪽에도 바꾼 자리가 있어야 한다');
+});
+
+/* ---------- 달마다 순번을 이어받기 ---------- */
+
+test('저장해 둔 자리를 지금 명단에 맞춰 푼다', () => {
+  // 명단이 그대로면 저장된 자리 그대로
+  assert.strictEqual(R.ceResolveStart(['가', '나', '다'], { idx: 2, last: '나' }), 2);
+  // 앞쪽에서 한 명이 빠져 자리가 밀렸으면 마지막 사람 다음으로
+  assert.strictEqual(R.ceResolveStart(['나', '다'], { idx: 2, last: '나' }), 1);
+  // 뒤에 사람을 더해도 자리는 그대로
+  assert.strictEqual(R.ceResolveStart(['가', '나', '다', '라'], { idx: 2, last: '나' }), 2);
+  // 마지막 사람이 빠졌으면 한 칸 앞 — 뒷사람이 당겨 왔으므로 그 자리가 다음 차례다
+  // ['가','나','다','라'] 에서 '나' 가 빠지면 원래 다음이던 '다' 가 자리 1 로 온다
+  assert.strictEqual(R.ceResolveStart(['가', '다', '라'], { idx: 2, last: '나' }), 1);
+  assert.strictEqual(['가', '다', '라'][1], '다');
+  // 같은 이름이 여럿이면 원래 자리에서 가까운 쪽 다음으로
+  assert.strictEqual(R.ceResolveStart(['가', '나', '다', '나', '마'], { idx: 4, last: '나' }), 4);
+  // 명단이 비었거나 기록이 없으면 처음부터
+  assert.strictEqual(R.ceResolveStart([], { idx: 3, last: '가' }), 0);
+  assert.strictEqual(R.ceResolveStart(['가', '나'], { idx: 0, last: '' }), 0);
+});
+
+test('달이 시작할 때의 자리를 달마다 적어 둔다', () => {
+  const cfg = { anchor: '2026-09-02', dawnDows: [1,2,3,4,5,6], satDows: [6], doorDows: [3], praiseDows: [6] };
+  const rot = { sermon: ['가', '나', '다', '라', '마'], broadcast: ['ㄱ', 'ㄴ'] };
+  const s = R.ceBuildSchedule(cfg, rot, [], R.ceMonthGrid(2026, 11).buildEndIso);
+  const months = Object.keys(s.monthStart).sort();
+  assert.deepStrictEqual(months, ['2026-09', '2026-10', '2026-11', '2026-12']);
+  assert.deepStrictEqual(s.monthStart['2026-09'].sermon, { idx: 0, last: '' });
+  // 그 달 첫날 직전에 선 사람과 다음 차례가 적힌다
+  const oct = s.monthStart['2026-10'].sermon;
+  assert.ok(oct.last, '마지막 사람이 적혀야 한다');
+  assert.strictEqual(rot.sermon[(oct.idx - 1 + 5) % 5], oct.last);
+});
+
+test('적어 둔 자리가 있으면 그 달은 거기서 다시 시작한다', () => {
+  const cfg = { anchor: '2026-09-02', dawnDows: [1,2,3,4,5,6], satDows: [6], doorDows: [3], praiseDows: [6] };
+  const rot = { sermon: ['가', '나', '다', '라', '마'], broadcast: ['ㄱ'] };
+  const end = R.ceMonthGrid(2026, 11).buildEndIso;
+
+  const plain = R.ceBuildSchedule(cfg, rot, [], end);
+  const forced = R.ceBuildSchedule(cfg, rot, [], end, { '2026-11': { sermon: 0 } });
+  assert.notStrictEqual(plain.byIso['2026-11-02'].preacher, undefined);
+  assert.strictEqual(forced.byIso['2026-11-02'].preacher, '가', '적어 둔 자리에서 시작한다');
+  // 그 앞 달은 그대로다
+  assert.strictEqual(forced.byIso['2026-10-01'].preacher, plain.byIso['2026-10-01'].preacher);
+});
+
+test('적어 둔 자리가 없는 달은 그냥 이어서 돈다', () => {
+  const cfg = { anchor: '2026-09-02', dawnDows: [1,2,3,4,5,6], satDows: [6], doorDows: [3], praiseDows: [6] };
+  const rot = { sermon: ['가', '나', '다'], broadcast: ['ㄱ'] };
+  const end = R.ceMonthGrid(2026, 10).buildEndIso;
+  const a = R.ceBuildSchedule(cfg, rot, [], end);
+  const b = R.ceBuildSchedule(cfg, rot, [], end, {});
+  assert.deepStrictEqual(Object.keys(b.byIso).map(k => b.byIso[k].preacher),
+    Object.keys(a.byIso).map(k => a.byIso[k].preacher));
 });
 
 console.log('\n' + passed + ' passed');

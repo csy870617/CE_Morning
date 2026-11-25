@@ -29,12 +29,14 @@ function ceSpecialSlot(dow, info, cfg) {
   var doorDows = cfg.doorDows && cfg.doorDows.length ? cfg.doorDows : [3];
   var praiseDows = cfg.praiseDows && cfg.praiseDows.length ? cfg.praiseDows : [6];
   if (doorDows.indexOf(dow) >= 0) {
-    return { name: info.door || '', off: !!info.offDoor, gap: !!info.gapDoor, label: '수요현관' };
+    return { name: info.door || '', off: !!info.offDoor, blank: !!info.blankDoor,
+      gap: !!info.gapDoor, label: '수요백업' };
   }
   if (praiseDows.indexOf(dow) >= 0) {
-    return { name: info.praise || '', off: !!info.offPraise, gap: !!info.gapPraise, label: '토요찬양' };
+    return { name: info.praise || '', off: !!info.offPraise, blank: !!info.blankPraise,
+      gap: !!info.gapPraise, label: '토요백업' };
   }
-  return { name: '', off: false, gap: false, label: '' };
+  return { name: '', off: false, blank: false, gap: false, label: '' };
 }
 
 function ceMonthSheetName(year, month) {
@@ -70,7 +72,12 @@ function ceGenerateMonth(year, month) {
 
   // 격자보다 한 달 더 계산합니다. 마지막 주 겹침이 구간 밖을 못 봐서
   // 같은 날짜가 달마다 달라지는 일을 막습니다. 그리는 것은 격자 범위만입니다.
-  var sched = ceBuildSchedule(cfg, rot, ex, grid.buildEndIso || grid.endIso);
+  // 달이 시작할 때의 순번을 저장해 두고 그대로 이어 갑니다.
+  // 명단에서 누가 빠져도 이미 만들어 둔 지난달 표가 흔들리지 않습니다.
+  var savedStarts = ceReadStartStates();
+  var starts = ceResolveStartStates(savedStarts, rot);
+  var sched = ceBuildSchedule(cfg, rot, ex, grid.buildEndIso || grid.endIso, starts);
+  ceSaveNewStartStates(sched.monthStart);
   ceWriteMonthSheet(year, month, grid, sched, cfg, rot);
 
   var sheetName = ceMonthSheetName(year, month);
@@ -84,6 +91,7 @@ function ceGenerateMonth(year, month) {
       .concat(ceSameDowHintNotes(sched, grid))
       .concat(ceUnknownNameNotes(rot, ex, grid))
       .concat(ceSwapSummaryNotes(sched, grid))
+      .concat( cePastMonthNotes(savedStarts, year, month) )
   };
 }
 
@@ -132,20 +140,23 @@ function ceFallbackNotes(rot, cfg) {
 
 /** 그 달에 휴일이 있는데 휴일 명단이 비어 있으면 알려 줍니다. */
 function ceHolidayListNotes(rot, sched, grid) {
-  var hasHoliday = false;
+  // '빈칸' 으로 잡은 날은 휴일 명단을 쓰지 않으므로 세지 않습니다.
+  var needSermon = false;
+  var needBroadcast = false;
   for (var iso in sched.byIso) {
     if (!Object.prototype.hasOwnProperty.call(sched.byIso, iso)) continue;
     if (iso < grid.startIso || iso > grid.endIso) continue;
     var a = sched.byIso[iso];
-    if (a.offSermon || a.offBroadcast) { hasHoliday = true; break; }
+    if (a.offSermon && !a.blankSermon) needSermon = true;
+    if (a.offBroadcast && !a.blankBroadcast) needBroadcast = true;
   }
-  if (!hasHoliday) return [];
+  if (!needSermon && !needBroadcast) return [];
 
   var notes = [];
-  if (!(rot.holidaySermon || []).length) {
+  if (needSermon && !(rot.holidaySermon || []).length) {
     notes.push('[휴일(설교)] 명단이 비어 있어 휴일 설교자 칸을 비워 두었습니다.');
   }
-  if (!(rot.holidayBroadcast || []).length) {
+  if (needBroadcast && !(rot.holidayBroadcast || []).length) {
     notes.push('[휴일(백업)] 명단이 비어 있어 휴일 방송실 칸을 비워 두었습니다.');
   }
   return notes;
@@ -192,6 +203,24 @@ function ceSwapSummaryNotes(sched, grid) {
 }
 
 
+/**
+ * 이미 더 뒤 달까지 만들어 둔 상태에서 지난달을 다시 만들면 알려 줍니다.
+ * 그 달이 시작하는 자리는 그대로지만, 그 뒤로는 지금 명단으로 새로 계산되므로
+ * 전에 뽑아 두신 표와 달라질 수 있습니다.
+ */
+function cePastMonthNotes(savedStarts, year, month) {
+  var mine = ceFormatYearMonth(year, month);
+  for (var ym in savedStarts) {
+    if (!Object.prototype.hasOwnProperty.call(savedStarts, ym)) continue;
+    if (ym > mine) {
+      return ['이 달보다 뒤 달(' + ym + ')을 이미 만들어 두셨습니다. ' +
+        '지난달을 다시 만들면 그 달 안쪽은 지금 명단으로 새로 계산되니, ' +
+        '전에 뽑아 두신 표와 달라진 곳이 없는지 확인해 주세요.'];
+    }
+  }
+  return [];
+}
+
 /** 같은 요일 횟수를 못 맞춘 경우, 왜 그런지 한 번만 덧붙입니다. */
 function ceSameDowHintNotes(sched, grid) {
   for (var iso in sched.byIso) {
@@ -223,7 +252,7 @@ function ceUnknownNameNotes(rot, exceptions, grid) {
   for (var e = 0; e < exceptions.length; e++) {
     var ex = exceptions[e];
     if (ex.start < grid.startIso || ex.start > grid.endIso) continue;   // 이번 달 것만 봅니다
-    if (ceIsHolidayName(ex.name)) continue;                             // '휴일' 은 사람이 아닙니다
+    if (ceIsOffName(ex.name)) continue;                                 // '휴일'·'빈칸' 은 사람이 아닙니다
     if (known[ex.name] || seen[ex.name]) continue;
     seen[ex.name] = true;
     unknown.push(ex.name + ' (' + ex.start + ')');
@@ -262,6 +291,63 @@ function ceCollectWarnings(grid, sched, cfg) {
 
 /** 휴일 칸: 비운 채로 표시만 해 둡니다. 그대로 손으로 적으시면 됩니다. */
 /**
+ * 이미 만들어 둔 'YYYY-MM' 시트에서 그 달 칸을 그대로 읽어 옵니다.
+ *
+ * 앞뒤 달 칸(흐리게 나오는 칸)은 그 달 시트가 주인입니다. 여기서 읽어다 쓰면,
+ * 그 사이 명단이 바뀌었더라도 두 시트가 같은 이름을 보여 줍니다.
+ * 시트가 없거나 모양이 다르면 null 을 돌려주고, 그때는 계산한 값을 씁니다.
+ */
+function ceReadMonthCells(ym) {
+  var sh = ceSheet(ym, false);
+  if (!sh) return null;
+  var parts = String(ym).split('-');
+  var grid = ceMonthGrid(Number(parts[0]), Number(parts[1]));
+  var out = { days: {}, ushers: {} };
+
+  for (var w = 0; w < grid.weeks.length; w++) {
+    var base = CE_OUT.FIRST_BLOCK_ROW + w * 4;
+    if (String(sh.getRange(base, 1).getValue()).trim() !== CE_ROW_LABELS[0]) return null;
+    for (var c = 0; c < CE_OUT.COLS; c++) {
+      var col = CE_OUT.FIRST_COL + c;
+      out.days[grid.weeks[w][c].iso] = {
+        preacher: String(sh.getRange(base + 1, col).getValue() || ''),
+        broadcast: String(sh.getRange(base + 2, col).getValue() || ''),
+        special: String(sh.getRange(base + 3, col).getValue() || '')
+      };
+    }
+    out.ushers[grid.weeks[w][0].iso] = [
+      String(sh.getRange(base, CE_OUT.USHER_COL).getValue() || ''),
+      String(sh.getRange(base + 1, CE_OUT.USHER_COL).getValue() || ''),
+      String(sh.getRange(base + 2, CE_OUT.USHER_COL).getValue() || ''),
+      String(sh.getRange(base + 3, CE_OUT.USHER_COL).getValue() || '')
+    ];
+  }
+  return out;
+}
+
+/** 이 달 격자에 섞여 있는 앞뒤 달의 이미 만들어 둔 시트를 모아 둡니다. */
+function ceNeighbourCells(year, month, grid) {
+  var mine = ceFormatYearMonth(year, month);
+  var found = {};
+  for (var w = 0; w < grid.weeks.length; w++) {
+    for (var c = 0; c < CE_OUT.COLS; c++) {
+      var ym = grid.weeks[w][c].iso.slice(0, 7);
+      if (ym === mine || found[ym] !== undefined) continue;
+      found[ym] = ceReadMonthCells(ym);
+    }
+  }
+  return { mine: mine, months: found };
+}
+
+/** 그 칸을 이웃 달 시트에서 읽어 올 수 있으면 돌려줍니다. */
+function ceBorrowedCell(nb, iso) {
+  var ym = iso.slice(0, 7);
+  if (!nb || ym === nb.mine) return null;
+  var got = nb.months[ym];
+  return (got && got.days[iso]) || null;
+}
+
+/**
  * 한 칸에 붙일 메모를 모아 한 번에 씁니다.
  * 한 칸에 사연이 둘 이상일 수 있어서, 따로따로 쓰면
  * 뒤에 쓴 것이 앞의 것을 덮어 버립니다.
@@ -274,8 +360,13 @@ function ceWriteNote(sh, row, col, lines) {
   if (kept.length) sh.getRange(row, col).setNote(kept.join('\n'));
 }
 
-function ceMarkHoliday(sh, row, col) {
-  sh.getRange(row, col).setBackground(CE_COLOR.HOLIDAY_BG).setNote('휴일 — 직접 입력하세요');
+/**
+ * 보통 순번에서 뺀 칸. 연한 빨강으로 두어 눈에 띄게 합니다.
+ * 휴일 명단에서 채운 칸이면 이름이 들어 있고, '빈칸' 으로 잡았으면 비어 있습니다.
+ */
+function ceMarkHoliday(sh, row, col, blank) {
+  sh.getRange(row, col).setBackground(CE_COLOR.HOLIDAY_BG)
+    .setNote(blank ? '빈칸 — 직접 입력하세요' : '휴일 — 직접 입력하세요');
 }
 
 /** 명단은 있는데 그날 전원이 예외라 못 채운 칸. */
@@ -289,7 +380,7 @@ function ceMarkGap(sh, row, col) {
  *   아래 세 칸 - 현관안내 명단 순서대로 세 명
  * 칸 색은 왼쪽 표의 같은 줄과 똑같이 맞춥니다.
  */
-function ceWriteUsherBlock(sh, base, week, sched, cfg) {
+function ceWriteUsherBlock(sh, base, week, sched, cfg, borrowed) {
   var doorDows = cfg.doorDows && cfg.doorDows.length ? cfg.doorDows : [3];
   var praiseDows = cfg.praiseDows && cfg.praiseDows.length ? cfg.praiseDows : [6];
 
@@ -305,6 +396,17 @@ function ceWriteUsherBlock(sh, base, week, sched, cfg) {
   sh.getRange(base, CE_OUT.USHER_COL).setValue(label)
     .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff')
     .setFontWeight('bold').setHorizontalAlignment('center');
+
+  // 그 주 수요일이 이웃 달에 들어 있으면, 현관안내도 그 달 시트에서 읽어 씁니다.
+  if (borrowed) {
+    sh.getRange(base, CE_OUT.USHER_COL).setValue(borrowed[0]);
+    for (var b = 1; b <= CE_USHER_PER_WEEK; b++) {
+      sh.getRange(base + b, CE_OUT.USHER_COL).setValue(borrowed[b] || '')
+        .setHorizontalAlignment('center')
+        .setBackground(b === 1 ? CE_COLOR.BAND_BG : null);
+    }
+    return;
+  }
 
   var info = (wed && sched.byIso[wed.iso]) || {};
   var names = info.ushers || [];
@@ -468,6 +570,9 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
     .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff')
     .setFontWeight('bold').setHorizontalAlignment('center');
 
+  // 앞뒤 달 칸은 그 달 시트가 주인입니다. 이미 있으면 거기서 읽어 씁니다.
+  var nb = ceNeighbourCells(year, month, grid);
+
   for (var w = 0; w < grid.weeks.length; w++) {
     var base = CE_OUT.FIRST_BLOCK_ROW + w * 4;
     var week = grid.weeks[w];
@@ -485,10 +590,11 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
         gapSermon: false, gapBroadcast: false, gapDoor: false, gapPraise: false,
         swapNote: '', warning: ''
       };
+      var borrowed = ceBorrowedCell(nb, cell.iso);
       dates.push(cell.day);
-      preachers.push(a.preacher || '');
-      broadcasts.push(a.broadcast || '');
-      specials.push(ceSpecialSlot(cell.dow, a, cfg).name);
+      preachers.push(borrowed ? borrowed.preacher : (a.preacher || ''));
+      broadcasts.push(borrowed ? borrowed.broadcast : (a.broadcast || ''));
+      specials.push(borrowed ? borrowed.special : ceSpecialSlot(cell.dow, a, cfg).name);
     }
 
     sh.getRange(base, 1, 4, 1).setValues([[CE_ROW_LABELS[0]], [CE_ROW_LABELS[1]], [CE_ROW_LABELS[2]], [CE_ROW_LABELS[3]]])
@@ -503,7 +609,11 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
       .setBackground(CE_COLOR.HEAD_BG).setFontColor('#ffffff').setFontWeight('bold');
     sh.getRange(base + 1, 1, 1, totalCols).setBackground(CE_COLOR.BAND_BG);
 
-    ceWriteUsherBlock(sh, base, week, sched, cfg);
+    // 그 주 전체가 이웃 달 것이면(첫 주·마지막 주) 현관안내도 그 달 시트에서
+    var weekOwner = week[0].iso.slice(0, 7);
+    var fromNb = (weekOwner !== nb.mine && nb.months[weekOwner])
+      ? nb.months[weekOwner].ushers[week[0].iso] : null;
+    ceWriteUsherBlock(sh, base, week, sched, cfg, fromNb);
     sh.getRange(base, CE_OUT.FIRST_COL, 4, CE_OUT.COLS).setHorizontalAlignment('center');
 
     // 이번 달이 아닌 칸은 흐리게 (앞뒤 달 시트와 이름은 서로 같습니다)
@@ -513,17 +623,20 @@ function ceWriteMonthSheet(year, month, grid, sched, cfg, rot) {
       if (!cellInfo.inMonth) {
         sh.getRange(base, col, 4, 1).setFontColor(CE_COLOR.OUT_OF_MONTH);
       }
+      // 이웃 달에서 빌려 온 칸은 그 달 시트가 주인이므로 표시를 덧대지 않습니다.
+      if (ceBorrowedCell(nb, cellInfo.iso)) continue;
       var info = sched.byIso[cellInfo.iso];
       if (!info) continue;
 
       var special = ceSpecialSlot(cellInfo.dow, info, cfg);
 
       // 휴일로 잡은 칸은 비운 채로 노랗게 두어 손으로 적으실 수 있게 합니다.
-      if (info.offSermon) ceMarkHoliday(sh, base + 1, col);
-      if (info.offBroadcast) ceMarkHoliday(sh, base + 2, col);
-      if (special.off) ceMarkHoliday(sh, base + 3, col);
+      if (info.offSermon) ceMarkHoliday(sh, base + 1, col, info.blankSermon);
+      if (info.offBroadcast) ceMarkHoliday(sh, base + 2, col, info.blankBroadcast);
+      if (special.off) ceMarkHoliday(sh, base + 3, col, special.blank);
       if (info.offSermon && info.offBroadcast) {
-        sh.getRange(base, col).setNote('휴일');
+        sh.getRange(base, col).setNote(
+          (info.blankSermon && info.blankBroadcast) ? '빈칸' : '휴일');
       }
 
       // 설교자 줄 메모 (같은 요일 두 번까지 규칙)

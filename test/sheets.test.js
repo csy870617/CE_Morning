@@ -1343,6 +1343,225 @@ test('토요일 설교가 되풀이되어도 경고하지 않는다', () => {
   assert.ok(out.warnings.join(' ').indexOf('세 번 이상입니다') < 0, plain(out.warnings).join(' '));
 });
 
+/* ---------- 명단이 바뀌어도 지난달은 흔들리지 않는다 ---------- */
+
+/** 한 명단의 이름을 통째로 바꿔 끼웁니다. */
+function setList(ss, header, names) {
+  const rot = ss.getSheetByName('로테이션');
+  const H = rot.getRange(1, 1, 1, rot.getLastColumn()).getValues()[0];
+  const col = H.indexOf(header) + 1;
+  assert.ok(col > 0, header + ' 열을 못 찾음');
+  for (let r = 2; r <= 40; r++) rot._set(r, col, '');
+  names.forEach((n, i) => rot._set(2 + i, col, n));
+}
+
+/** 그 시트의 Date 줄과 설교자 줄을 통째로 찍어 비교용으로 씁니다. */
+function snapshot(ss, name) {
+  const sh = ss.getSheetByName(name);
+  if (!sh) return null;
+  const rows = [];
+  let base = 3;
+  while (String(sh._get(base, 1)) === 'Date') {
+    rows.push([2, 3, 4, 5, 6, 7].map(c =>
+      [1, 2, 3].map(k => String(sh._get(base + k, c) || '')).join('/')).join(' '));
+    base += 4;
+  }
+  return rows.join('\n');
+}
+
+test('명단에서 한 명을 빼도 이미 만들어 둔 달은 그대로다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  [[2026, 9], [2026, 10], [2026, 11]].forEach(mm => ctx.ceGenerateMonth(mm[0], mm[1]));
+  const before = {
+    '2026-09': snapshot(ss, '2026-09'),
+    '2026-10': snapshot(ss, '2026-10'),
+    '2026-11': snapshot(ss, '2026-11')
+  };
+
+  // 설교 명단 가운데에서 한 명을 뺀다
+  setList(ss, '설교', ['설1', '설2', '설4', '설5', '설6', '설7']);
+  ctx.ceGenerateMonth(2026, 12);
+
+  Object.keys(before).forEach(ym => {
+    assert.strictEqual(snapshot(ss, ym), before[ym], ym + ' 표가 바뀌었다');
+  });
+});
+
+test('새 달은 지난달 마지막 사람 다음부터 새 명단으로 이어 간다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 11);
+  const nov = ss.getSheetByName('2026-11');
+
+  // 11월 마지막 평일(11/30 월) 설교자
+  let base = 3, lastName = '';
+  while (String(nov._get(base, 1)) === 'Date') {
+    for (let c = 2; c <= 7; c++) {
+      if (String(nov._get(base, c)) === '30' && base > 3) lastName = String(nov._get(base + 1, c) || '');
+    }
+    base += 4;
+  }
+  assert.ok(lastName, '11/30 설교자를 못 찾았다');
+
+  // 11/30 에 선 사람 '다음 차례' 가 누구였는지 옛 명단에서 집어 둔다
+  const was = fullRotations()['설교'];
+  const nextUp = was[(was.indexOf(lastName) + 1) % was.length];
+
+  // 그 '다음 차례' 가 아닌 다른 사람을 명단에서 뺀다
+  const removed = was.filter(n => n !== lastName && n !== nextUp)[0];
+  const list = was.filter(n => n !== removed);
+  setList(ss, '설교', list);
+  ctx.ceGenerateMonth(2026, 12);
+  const dec = ss.getSheetByName('2026-12');
+
+  let first = '';
+  for (let c = 2; c <= 7; c++) {
+    if (String(dec._get(3, c)) === '1') first = String(dec._get(4, c) || '');
+  }
+  assert.strictEqual(first, nextUp,
+    '11/30 이 ' + lastName + ' 였으니 12/1 은 그 다음인 ' + nextUp + ' 이어야 한다 (' +
+    removed + ' 를 뺀 뒤)');
+});
+
+test('지난달 마지막 사람이 명단에서 빠지면 그 다음 차례가 이어받는다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 11);
+  const nov = ss.getSheetByName('2026-11');
+
+  let base = 3, lastName = '';
+  while (String(nov._get(base, 1)) === 'Date') {
+    for (let c = 2; c <= 7; c++) {
+      if (String(nov._get(base, c)) === '30' && base > 3) lastName = String(nov._get(base + 1, c) || '');
+    }
+    base += 4;
+  }
+  const was = fullRotations()['설교'];
+  const nextUp = was[(was.indexOf(lastName) + 1) % was.length];
+
+  // 마지막에 선 사람을 빼 버린다
+  setList(ss, '설교', was.filter(n => n !== lastName));
+  ctx.ceGenerateMonth(2026, 12);
+  const dec = ss.getSheetByName('2026-12');
+  let first = '';
+  for (let c = 2; c <= 7; c++) {
+    if (String(dec._get(3, c)) === '1') first = String(dec._get(4, c) || '');
+  }
+  assert.strictEqual(first, nextUp,
+    lastName + ' 를 뺐으니 12/1 은 그 다음이던 ' + nextUp + ' 이어야 한다');
+});
+
+test('앞뒤 달 칸은 그 달 시트에서 그대로 읽어 온다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 11);
+  const nov = ss.getSheetByName('2026-11');
+  // 11/30 은 11월 시트 마지막 블록, 12월 시트 첫 블록에 함께 나온다
+  const novAt30 = (() => {
+    let base = 3;
+    while (String(nov._get(base, 1)) === 'Date') {
+      for (let c = 2; c <= 7; c++) {
+        if (String(nov._get(base, c)) === '30' && base > 3) {
+          return [1, 2, 3].map(k => String(nov._get(base + k, c) || ''));
+        }
+      }
+      base += 4;
+    }
+    return null;
+  })();
+  assert.ok(novAt30);
+
+  setList(ss, '설교', ['설1', '설2', '설4', '설5', '설6', '설7']);
+  ctx.ceGenerateMonth(2026, 12);
+  const dec = ss.getSheetByName('2026-12');
+  let decAt30 = null;
+  for (let c = 2; c <= 7; c++) {
+    if (String(dec._get(3, c)) === '30') decAt30 = [1, 2, 3].map(k => String(dec._get(3 + k, c) || ''));
+  }
+  assert.ok(decAt30, '12월 시트 첫 블록에서 11/30 을 못 찾았다');
+  assert.deepStrictEqual(decAt30, novAt30, '같은 날짜인데 두 시트가 다르다');
+});
+
+test('순번 저장 탭이 생기고 숨겨져 있다', () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 11);
+  const store = ss.getSheetByName('_순번저장');
+  assert.ok(store, '_순번저장 탭이 없다');
+  assert.strictEqual(store.isSheetHidden(), true);
+  assert.deepStrictEqual(plain(store.getRange(1, 1, 1, 4).getValues()[0]),
+    ['연월', '명단', '다음자리', '마지막사람']);
+  assert.ok(ss.visibleNames().indexOf('_순번저장') < 0, '숨김 탭이 보인다');
+
+  // 같은 달을 다시 만들어도 줄이 늘어나지 않는다
+  const rows = store.getLastRow();
+  ctx.ceGenerateMonth(2026, 11);
+  assert.strictEqual(store.getLastRow(), rows, '다시 만들 때마다 줄이 늘어난다');
+});
+
+test('지난달을 다시 만들려고 하면 알려 준다', () => {
+  const { ctx } = prepared(fullRotations());
+  ctx.ceGenerateMonth(2026, 11);
+  const back = ctx.ceGenerateMonth(2026, 10);
+  assert.ok(back.notes.join(' ').indexOf('뒤 달') >= 0, plain(back.notes).join(' | '));
+  // 맨 뒤 달을 만들 때는 그런 말이 없다
+  const fresh = ctx.ceGenerateMonth(2027, 3);
+  assert.ok(fresh.notes.join(' ').indexOf('뒤 달') < 0, plain(fresh.notes).join(' | '));
+});
+
+/* ---------- 달력에 '빈칸' 이라고 적으면 ---------- */
+
+test("'빈칸' 은 휴일 명단을 쓰지 않고 칸을 비운다", () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceRenderCalendar(2026, 11);
+  const cal = ss.getSheetByName('달력(예외자)');
+  const a = findDayCell(cal, 11), b = findDayCell(cal, 12);
+  cal._set(a.row, a.col, '휴일');
+  cal._set(b.row, b.col, '빈칸');
+
+  const out = ctx.ceGenerateMonth(2026, 11);
+  const sh = ss.getSheetByName('2026-11');
+  const at = day => {
+    let base = 3;
+    while (String(sh._get(base, 1)) === 'Date') {
+      for (let c = 2; c <= 7; c++) {
+        if (String(sh._get(base, c)) === String(day) && base > 3) {
+          return { row: base + 1, col: c, sermon: String(sh._get(base + 1, c) || '') };
+        }
+      }
+      base += 4;
+    }
+    return null;
+  };
+  const hol = at(11), blank = at(12);
+  assert.strictEqual(hol.sermon, '휴설1', '휴일은 휴일 명단에서 채운다');
+  assert.strictEqual(blank.sermon, '', '빈칸은 아무도 세우지 않는다');
+  assert.strictEqual(sh.notes.get(blank.row + ',' + blank.col), '빈칸 — 직접 입력하세요');
+  assert.strictEqual(sh.getRange(blank.row, blank.col).getBackground(), '#f4cccc');
+  // '전원 예외' 로 잘못 알리지 않는다
+  assert.ok(out.warnings.join(' ').indexOf('2026-11-12') < 0, plain(out.warnings).join(' | '));
+});
+
+test("'빈칸' 만 쓰면 휴일 명단이 비었다고 하지 않는다", () => {
+  const rots = fullRotations();
+  rots['휴일(설교)'] = [];
+  rots['휴일(백업)'] = [];
+  const { ctx, ss } = prepared(rots);
+  ctx.ceRenderCalendar(2026, 11);
+  const cal = ss.getSheetByName('달력(예외자)');
+  const c = findDayCell(cal, 12);
+  cal._set(c.row, c.col, '빈칸');
+
+  const out = ctx.ceGenerateMonth(2026, 11);
+  assert.ok(out.notes.join(' ').indexOf('휴일(설교)') < 0, plain(out.notes).join(' | '));
+});
+
+test("'빈칸' 은 명단에 없는 이름이라고 알리지 않는다", () => {
+  const { ctx, ss } = prepared(fullRotations());
+  ctx.ceRenderCalendar(2026, 11);
+  const cal = ss.getSheetByName('달력(예외자)');
+  const c = findDayCell(cal, 12);
+  cal._set(c.row, c.col, '빈칸, 없음, 직접입력');
+  const out = ctx.ceGenerateMonth(2026, 11);
+  assert.ok(out.notes.join(' ').indexOf('명단에 없는 이름') < 0, plain(out.notes).join(' | '));
+});
+
 /* ---------- 전체 점검에서 찾아 고친 것들 ---------- */
 
 test('앞뒤 달 시트가 겹치는 날짜에서 같은 이름을 쓴다', () => {
