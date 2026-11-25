@@ -910,31 +910,39 @@ test('이름은 가나다 순이고 중복이 없다', () => {
   assert.deepStrictEqual(plain(shown), ['김목사', '박집사', '한목사']);
 });
 
-test('설교자 줄은 노랑, 나머지는 연한 초록 규칙이 걸린다', () => {
+test('설교자 줄은 노랑, 서브는 하늘색, 나머지는 연한 초록 규칙이 걸린다', () => {
   const { ctx, ss } = prepared({ '설교': ['김목사', '이목사'], '방송': ['정집사'] });
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
 
   const rules = sh.getConditionalFormatRules();
-  assert.strictEqual(rules.length, 2, '색깔 두 개짜리 규칙 둘');
+  assert.strictEqual(rules.length, 3, '색깔별 규칙 셋');
 
   const yellow = rules.filter(r => r.background === '#ffe599')[0];
   const green = rules.filter(r => r.background === '#d9ead3')[0];
   assert.ok(yellow, '노랑 규칙이 있어야 한다');
   assert.ok(green, '연한 초록 규칙이 있어야 한다');
+  const blue = rules.filter(r => r.background === '#cfe2f3')[0];
+  assert.ok(blue, '하늘색 규칙이 있어야 한다');
+  // 수요/토요 서브 두 줄은 하늘색
+  ['B6:G7', 'B11:G12', 'B16:G17', 'B21:G22', 'B26:G27'].forEach(r => {
+    assert.ok(blue.ranges.indexOf(r) >= 0, r + ' 이 하늘색 규칙에 없다');
+    assert.ok(green.ranges.indexOf(r) < 0, r + ' 이 초록에도 걸렸다');
+  });
+  assert.ok(blue.ranges.indexOf('B5:G5') < 0, '방송실 줄이 하늘색에 걸렸다');
 
   // 설교자 줄은 각 주 블록의 두 번째 줄: 4, 9, 14, 19, 24
   ['B4:G4', 'B9:G9', 'B14:G14', 'B19:G19', 'B24:G24'].forEach(r => {
     assert.ok(yellow.ranges.indexOf(r) >= 0, r + ' 이 노랑 규칙에 없다');
   });
-  // 방송실 + 수요/토요 서브(두 줄) 는 그 아래 세 줄씩, 현관안내는 I열 네 칸
-  ['B5:G7', 'B10:G12', 'B15:G17', 'B20:G22', 'B25:G27',
+  // 방송실 줄, 현관안내는 I열 네 칸
+  ['B5:G5', 'B10:G10', 'B15:G15', 'B20:G20', 'B25:G25',
    'I4:I7', 'I9:I12', 'I14:I17', 'I19:I22', 'I24:I27'].forEach(r => {
     assert.ok(green.ranges.indexOf(r) >= 0, r + ' 이 초록 규칙에 없다');
   });
   // 설교자 줄이 초록에, 방송실 줄이 노랑에 섞여 들어가지 않는다
   assert.ok(green.ranges.indexOf('B4:G4') < 0, '설교자 줄이 초록에도 걸렸다');
-  assert.ok(yellow.ranges.indexOf('B5:G7') < 0, '방송실 줄이 노랑에도 걸렸다');
+  assert.ok(yellow.ranges.indexOf('B5:G5') < 0, '방송실 줄이 노랑에도 걸렸다');
 });
 
 test('조건식이 자리에 휘둘리지 않도록 지금 칸을 가리킨다', () => {
@@ -966,7 +974,7 @@ test('다시 만들면 규칙이 겹쳐 쌓이지 않는다', () => {
   ctx.ceGenerateMonth(2026, 9);
   ctx.ceGenerateMonth(2026, 9);
   const sh = ss.getSheetByName('2026-09');
-  assert.strictEqual(sh.getConditionalFormatRules().length, 2);
+  assert.strictEqual(sh.getConditionalFormatRules().length, 3);
 });
 
 test('아래 설명줄은 이름 목록보다 뒤에 온다', () => {
@@ -1273,7 +1281,7 @@ test('설명줄에는 색깔만 적고 괄호 설명은 붙이지 않는다', ()
     if (v.indexOf('이름을 체크하면') === 0) text = v;
   }
   assert.ok(text, '설명줄을 찾지 못했다');
-  assert.ok(text.indexOf('노랑') >= 0 && text.indexOf('연한 초록') >= 0, text);
+  assert.ok(text.indexOf('노랑') >= 0 && text.indexOf('연한 초록') >= 0 && text.indexOf('수요/토요 서브는 하늘색') >= 0, text);
   assert.ok(text.indexOf('(') < 0, '괄호 설명이 남아 있다: ' + text);
   assert.ok(text.indexOf('여러 명') < 0, text);
   assert.ok(text.indexOf('한 사람씩만') < 0, text);

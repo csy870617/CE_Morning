@@ -908,7 +908,8 @@ var CE_COLOR = {
   HOLIDAY_BG: '#f4cccc',        // 휴일 - 연한 빨강
   WARN_BG: '#ea9999',           // 채우지 못한 칸 - 좀 더 진한 빨강
   PICK_SERMON_BG: '#ffe599',    // 이름 체크: 설교자 줄 - 노랑
-  PICK_OTHER_BG: '#d9ead3',     // 이름 체크: 그 밖의 줄 - 연한 초록
+  PICK_OTHER_BG: '#d9ead3',     // 이름 체크: 방송실·현관안내 - 연한 초록
+  PICK_SUB_BG: '#cfe2f3',       // 이름 체크: 수요/토요 서브 - 하늘색
   OUT_OF_MONTH: '#999999',
   BORDER: '#b7b7b7'
 };
@@ -2126,7 +2127,7 @@ function ceWriteNamePicker(sh, startRow, totalCols, grid, sched, cfg) {
   if (!names.length) return startRow - 1;
 
   sh.getRange(startRow, 1, 1, totalCols).merge()
-    .setValue('이름을 체크하면 그 사람 칸이 표시됩니다 — 설교는 노랑, 방송·수요/토요 서브·현관안내는 연한 초록.')
+    .setValue('이름을 체크하면 그 사람 칸이 표시됩니다 — 설교는 노랑, 수요/토요 서브는 하늘색, 방송·현관안내는 연한 초록.')
     .setFontSize(9).setFontColor('#666666');
 
   var perLine = CE_OUT.COLS;                 // 표 너비에 맞춰 한 줄에 6명씩
@@ -2158,7 +2159,7 @@ function ceWriteNamePicker(sh, startRow, totalCols, grid, sched, cfg) {
 
 /**
  * 체크한 이름과 같은 칸을 칠하는 조건부 서식.
- * 설교자 줄은 노랑, 방송실과 수요/토요 서브 줄은 연한 초록으로 갈라 놓습니다.
+ * 설교자 줄은 노랑, 수요/토요 서브 두 줄은 하늘색, 방송실 줄과 현관안내는 연한 초록입니다.
  *
  * 규칙 하나가 여러 자리에 걸리므로, 조건식이 자리에 휘둘리지 않도록
  * INDIRECT(ADDRESS(ROW(),COLUMN())) 로 '지금 이 칸' 을 가리킵니다.
@@ -2176,10 +2177,12 @@ function ceApplyHighlightRule(sh, pairs, weekCount) {
 
   var sermonRanges = [];
   var otherRanges = [];
+  var subRanges = [];
   for (var w = 0; w < weekCount; w++) {
     var base = CE_OUT.FIRST_BLOCK_ROW + w * CE_OUT.BLOCK_ROWS;
     sermonRanges.push(sh.getRange(base + 1, CE_OUT.FIRST_COL, 1, CE_OUT.COLS));
-    otherRanges.push(sh.getRange(base + 2, CE_OUT.FIRST_COL, CE_OUT.BLOCK_ROWS - 2, CE_OUT.COLS));
+    otherRanges.push(sh.getRange(base + 2, CE_OUT.FIRST_COL, 1, CE_OUT.COLS));
+    subRanges.push(sh.getRange(base + CE_OUT.SUB_ROW, CE_OUT.FIRST_COL, CE_OUT.BLOCK_ROWS - CE_OUT.SUB_ROW, CE_OUT.COLS));
     otherRanges.push(sh.getRange(base + 1, CE_OUT.USHER_COL, CE_USHER_SLOT_ROWS, 1));
   }
   // 체크한 이름 칸도 함께 물듭니다. 설교자와 같은 색으로 둡니다.
@@ -2189,7 +2192,8 @@ function ceApplyHighlightRule(sh, pairs, weekCount) {
 
   sh.setConditionalFormatRules([
     ceHighlightRule(formula, CE_COLOR.PICK_SERMON_BG, sermonRanges),
-    ceHighlightRule(formula, CE_COLOR.PICK_OTHER_BG, otherRanges)
+    ceHighlightRule(formula, CE_COLOR.PICK_OTHER_BG, otherRanges),
+    ceHighlightRule(formula, CE_COLOR.PICK_SUB_BG, subRanges)
   ]);
 }
 

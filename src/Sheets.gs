@@ -82,7 +82,8 @@ var CE_COLOR = {
   HOLIDAY_BG: '#f4cccc',        // 휴일 - 연한 빨강
   WARN_BG: '#ea9999',           // 채우지 못한 칸 - 좀 더 진한 빨강
   PICK_SERMON_BG: '#ffe599',    // 이름 체크: 설교자 줄 - 노랑
-  PICK_OTHER_BG: '#d9ead3',     // 이름 체크: 그 밖의 줄 - 연한 초록
+  PICK_OTHER_BG: '#d9ead3',     // 이름 체크: 방송실·현관안내 - 연한 초록
+  PICK_SUB_BG: '#cfe2f3',       // 이름 체크: 수요/토요 서브 - 하늘색
   OUT_OF_MONTH: '#999999',
   BORDER: '#b7b7b7'
 };
